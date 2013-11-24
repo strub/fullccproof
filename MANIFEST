@@ -1,0 +1,19 @@
+# This MANIFEST
+MANIFEST
+
+# EC
+Makefile
+Makefile.common
+*.v
+
+# Ssreflect
+ssreflect/Makefile
+ssreflect/*.v
+ssreflect/ssreflect.ml4
+ssreflect/ssreflect.mllib
+ssreflect/ssrmatching.ml4
+ssreflect/ssrmatching.mli
+
+# Build scripts
+scripts/install-sh
+scripts/distribution.py

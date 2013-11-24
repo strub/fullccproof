@@ -19,7 +19,7 @@ this-distclean::
 .PHONY: count dist
 
 # --------------------------------------------------------------------
-DISTDIR = ecssr
+DISTDIR = krivine
 TAROPT  = --posix --owner=0 --group=0
 
 dist:
