@@ -1,2 +1,452 @@
 (* -------------------------------------------------------------------- *)
-Require Import ssreflect eqtype ssrbool ssrnat.
+Require Import ssreflect eqtype ssrbool ssrnat ssrfun seq.
+
+Set Implicit Arguments.
+Unset Strict Implicit.
+Unset Printing Implicit Defensive.
+
+(* -------------------------------------------------------------------- *)
+Reserved Notation "# x"         (at level 8, format "# x").
+Reserved Notation "^ x"         (at level 8, format "^ x").
+Reserved Notation "t · u"       (at level 16, left associativity, format "t  ·  u").
+Reserved Notation "'λ' [ t ]"   (at level 8, t at level 15, right associativity, format "'λ'  [ t ]").
+Reserved Notation "'ξ' [ c ] t" (at level 8, c, t at level 15, right associativity, format "'ξ' [ c ]  t").
+
+Inductive term : Type :=
+| Var of nat
+| App of term & term
+| Lam of term.
+
+Notation "# x"       := (Var x).
+Notation "t · u"     := (App t u).
+Notation "'λ' [ t ]" := (Lam t).
+
+Implicit Types x i     : nat.
+Implicit Types n m     : nat.
+Implicit Types t u v w : term.
+
+Scheme Equality for term.
+
+Lemma term_eqP t1 t2: reflect (t1 = t2) (term_beq t1 t2).
+Proof.
+  apply: (iffP idP).
+  + by move/internal_term_dec_bl.
+  + by move/internal_term_dec_lb.
+Qed.
+
+Definition term_eqMixin := EqMixin term_eqP.
+Canonical term_eqType := EqType term term_eqMixin.
+
+(* -------------------------------------------------------------------- *)
+Reserved Notation "t ·! u" (at level 16, left associativity, format "t  ·!  u").
+
+Definition AppS t := foldl App t.
+
+Notation "t ·! u" := (AppS t u).
+
+Lemma AppS_rcons t u us: t ·! (rcons us u) = (t ·! us) · u.
+Proof. by rewrite -cats1 /AppS foldl_cat. Qed.
+
+(* -------------------------------------------------------------------- *)
+Definition neutral (t : term) : bool :=
+  if t is λ [_] then true else false.
+
+(* -------------------------------------------------------------------- *)
+Fixpoint curry (t : term) :=
+  match t with
+  | u1 · u2 => let (a, h) := curry u1 in (a, rcons h u2)
+  | _       => (t, [::])
+  end.
+
+Lemma curryE (t : term): (curry t).1 ·! (curry t).2 = t.
+Proof.
+  elim: t => //= t IH u _; case: (curry t) IH => a h /= IH.
+  by rewrite AppS_rcons IH.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Fixpoint iswhnf_r (b : bool) (t : term) : bool :=
+  match t with
+  | λ [t]   => b
+  | #(_)    => true
+  | u1 · u2 => iswhnf_r false u1
+  end.
+
+Definition iswhnf := fun t => iswhnf_r true t.
+
+Fixpoint isnf_r (b : bool) (t : term) : bool :=
+  match t with
+  | λ [t]   => b && (isnf_r true t)
+  | #(_)    => true
+  | u1 · u2 => (isnf_r false u1) && (isnf_r true u2)
+  end.
+
+Definition isnf := fun t => isnf_r true t.
+
+(* -------------------------------------------------------------------- *)
+Inductive IsWhnf : term -> Prop :=
+| IsWhnfLam : forall t, IsWhnf (λ [t])
+| IsWhnfVar : forall x ts, IsWhnf (#x ·! ts).
+
+Lemma iswhnfP: forall t, reflect (IsWhnf t) (iswhnf t).
+Proof.
+  have hF t: reflect (exists n ts, t = #n ·! ts) (iswhnf_r false t).
+  + elim: t => [x|t IHt u IHu|t IHt] => /=; try constructor.
+    * by exists x; exists [::].
+    * apply: (iffP IHt).
+      - case=> x [ts] ->; exists x; exists (rcons ts u).
+        by rewrite -AppS_rcons.
+      - case=> x [ts]; elim/last_ind: ts => [//|ts u' _].
+        by rewrite AppS_rcons; case=> -> _; exists x; exists ts.
+    * by case=> x [us]; elim/last_ind: us => [//|us u _]; rewrite AppS_rcons.
+  have hW: forall t, iswhnf_r false t -> iswhnf_r true t by elim.
+  move=> t; apply: (iffP idP); rewrite /iswhnf.
+  + elim: t true => [x|t IHt u IHu|t IHt] b => //=.
+    * by move=> _; apply: (IsWhnfVar _ [::]).
+    * by move/hF => [x] [ts] ->; rewrite -AppS_rcons; apply: IsWhnfVar.
+    * move=> _; apply IsWhnfLam.
+  + by elim => //= x ts; apply/hW/hF; eauto.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Fixpoint height (t : term) : nat :=
+  match t with
+  | #(_)    => 0
+  | t1 · t2 => maxn (height t1) (height t2)
+  | λ [t]   => (height t).+1
+  end.
+
+(* -------------------------------------------------------------------- *)
+Reserved Notation "↑ t"           (at level 0, format "↑ t").
+Reserved Notation "↑ [ k ] t"     (at level 0, format "↑ [ k ] t").
+Reserved Notation "↑ [ k , n ] t" (at level 0, format "↑ [ k , n ] t").
+
+Fixpoint lift k n t :=
+  match t with
+  | #x      => if x >= k then #(x+n) else #x
+  | t1 · t2 => ↑[k,n] t1 · ↑[k,n] t2
+  | λ [t]   => λ [↑[k.+1,n] t]
+  end
+    where "↑ [ k , n ] t" := (lift k n t).
+
+Notation "↑ [ k ] t" := (↑[k,1] t).
+Notation "↑ t"       := (↑[0] t).
+
+(* -------------------------------------------------------------------- *)
+Reserved Notation "t [! x ← u ]" (at level 8, x, u at level 15, format "t [! x  ←  u ]").
+
+Fixpoint subst k w t :=
+  match t with
+  | #x =>
+           if x <  k then t
+      else if x == k then ↑[0,k] t
+      else #x.-1
+
+  | t1 · t2 => t1[!k ← w] · t2[!k ← w]
+  | λ [t]   => λ [t[!k.+1 ← w]]
+  end
+    where "t [! x ← u ]" := (subst x u t).
+
+(* -------------------------------------------------------------------- *)
+Reserved Notation "t '⇓_[bn]' u" (at level 30, format "t  '⇓_[bn]'  u").
+
+Inductive bn : term -> term -> Prop :=
+| BnVar : forall x, #x ⇓_[bn] #x
+
+| BnLam : forall t, λ [t] ⇓_[bn] λ [t]
+
+| BnRed : forall t t' u v w,
+    t' = λ [u] -> t ⇓_[bn] t' -> u[!0 ← v] ⇓_[bn] w -> t · v ⇓_[bn] w
+
+| BnNeu : forall t t' u,
+    ~~(neutral t) -> t ⇓_[bn] t' -> t · u ⇓_[bn] t' · u
+
+  where "t '⇓_[bn]' u" := (bn t u).
+
+(* -------------------------------------------------------------------- *)
+Inductive closure : Type :=
+| CClo  of term & seq closure
+| CGrd  of nat
+| CVar  of nat
+| CApp  of closure & closure
+| CLam  of closure.
+
+Implicit Types c : closure.
+Implicit Types cs : seq closure.
+
+Notation "'ξ' [ c ] t" := (CClo t c)   : closure.
+Notation "^ x"         := (CGrd x)     : closure.
+Notation "# x"         := (CVar x)     : closure.
+Notation "c1 · c2"     := (CApp c1 c2) : closure.
+Notation "'λ' [ c ]"   := (CLam c)     : closure.
+
+Bind Scope closure with closure.
+Delimit Scope closure with C.
+
+Section ClosureEq.
+  Local Open Scope closure.
+
+  Fixpoint closure_eqb (c1 c2 : closure) {struct c1} :=
+    match c1, c2 with
+    | ^n     , ^m        => n == m
+    | #n     , #m        => n == m
+    | c1 · c2, c'1 · c'2 => [&& closure_eqb c1 c'1 & closure_eqb c2 c'2]
+    | λ [c]  , λ [c']    => closure_eqb c c'
+    | ξ [c] t, ξ [c'] t' =>
+        let fix cseq cs1 cs2 :=
+            match cs1, cs2 with
+            | [::]     , [::]      => true
+            | c1 :: cs1, c2 :: cs2 => [&& closure_eqb c1 c2 & cseq cs1 cs2]
+            | _        , _         => false
+            end
+        in
+          [&& cseq c c' & t == t']
+    | _      , _         => false
+    end.
+
+  Lemma closure_eqP c1 c2: reflect (c1 = c2) (closure_eqb c1 c2).
+  Proof.
+    apply: (iffP idP).
+    + move: c1 c2; fix 1; move: closure_eqP => IH.
+      case=> [t cs|n|n|c1 c2|c] [t' cs'|n'|n'|c1' c2'|c'] //=;
+        try solve [ by move/eqP=> ->
+                  | by do! (try (try case/andP; move/IH=> ->))].
+      * case/andP=> h /eqP->; elim: cs cs' h => [|c cs IHcs] [|c' cs'] //=.
+        by case/andP=> /IH-> /IHcs; case=> ->.
+    + move: c1 c2; fix 1; move: closure_eqP => IH.
+      case=> [t cs|n|n|c1 c2|c] [t' cs'|n'|n'|c1' c2'|c'] //=;
+        try by (case; do? (try move/IH)=> ->//).
+      * case=> <- eq_cs; apply/andP; split=> //.
+        elim: cs cs' eq_cs => [|c cs IHcs] [|c' cs'] //=.
+        by case=> /IH-> /IHcs->.
+  Qed.
+
+  Definition closure_eqMixin := EqMixin closure_eqP.
+  Canonical closure_eqType := EqType closure closure_eqMixin.
+
+  Variable P : closure -> Prop.
+
+  Hypothesis Hclo : forall t cs, (forall c, c \in cs -> P c) -> P (ξ [cs] t).
+  Hypothesis Hgrd : forall n, P ^n.
+  Hypothesis Hvar : forall n, P #n.
+  Hypothesis Happ : forall c1 c2, P c1 -> P c2 -> P (c1 · c2).
+  Hypothesis Hlam : forall c, P c -> P (λ [c]).
+
+  Lemma clind c : P c.
+  Proof.
+    move: c; fix 1; case => [t cs|n|n|c1 c2|c].
+    + apply: Hclo; elim: cs => [|c' cs IH] c.
+      * by rewrite in_nil => {clind}.
+      * rewrite in_cons; case/orP => [/eqP->|].
+        by apply: clind. by move/IH => {clind}.
+    + by apply: Hgrd.
+    + by apply: Hvar.
+    + by apply: Happ; apply: clind.
+    + by apply: Hlam; apply: clind.
+  Qed.
+End ClosureEq.
+
+Fixpoint is_ephemeral c :=
+  match c with
+  | (#(_)   )%C => true
+  | (λ [c]  )%C => is_ephemeral c
+  | (c1 · c2)%C => [&& is_ephemeral c1 & is_ephemeral c2]
+  | _           => false
+  end.
+
+(* -------------------------------------------------------------------- *)
+Module HeightI.
+  Fixpoint h (c : closure) : nat :=
+    match c with
+    | (#(_)    )%C => 0
+    | (^(_)    )%C => 0
+    | (λ [c]   )%C => (h c).+1
+    | (c1 · c2 )%C => maxn (h c1) (h c2)
+    | (ξ [cs] t)%C =>
+        let fix ht t hs k {struct t} :=
+          match t with
+          | #i      => if i < k then 0 else nth 0 hs (i-k)
+          | λ [t]   => ht t hs k.+1
+          | t1 · t2 => maxn (ht t1 hs k) (ht t2 hs k)
+          end
+        in
+          ht t [seq h c | c <- cs] 0
+    end.
+End HeightI.
+
+(* -------------------------------------------------------------------- *)
+Module Type HeightSig.
+  Parameter h  : closure -> nat.
+  Parameter hE : h = HeightI.h.
+End HeightSig.
+
+Module Height : HeightSig.
+  Definition h := HeightI.h.
+
+  Lemma hE : h = HeightI.h.
+  Proof. by []. Qed.
+End Height.
+
+Notation h := Height.h.
+Canonical h_unlock := Unlockable Height.hE.
+
+(* -------------------------------------------------------------------- *)
+Fixpoint ht t hs k :=
+  match t with
+  | #i      => if i < k then 0 else nth 0 hs (i-k)
+  | λ [t]   => ht t hs k.+1
+  | t1 · t2 => maxn (ht t1 hs k) (ht t2 hs k)
+  end.
+
+Lemma h_CE cs t: h (ξ [cs] t) = ht t [seq h c | c <- cs] 0.
+Proof. by rewrite unlock. Qed.
+
+Lemma h_CGrdE n: h ^n = 0.
+Proof. by rewrite unlock. Qed.
+
+Lemma h_CVarE n: h #n = 0.
+Proof. by rewrite unlock. Qed.
+
+Lemma h_CLamE c: h (λ [c]) = 1 + h c.
+Proof. by rewrite unlock. Qed.
+
+Lemma h_CAppE c1 c2: h (c1 · c2) = maxn (h c1) (h c2).
+Proof. by rewrite unlock. Qed.
+
+Lemma h_VarE cs n: h (ξ [cs] #n) = nth 0 [seq h c | c <- cs] n.
+Proof. by rewrite h_CE /= subn0. Qed.
+
+Lemma h_LamE cs t k: h (ξ [cs] (λ [t])) = h (ξ [(^k)%C :: cs] t).
+Proof.
+  rewrite !h_CE /= h_CGrdE -cat1s; move: [seq _ | _ <- _] => hs.
+  have ->: [:: 0] = nseq 1 0 by []; move: 1%N => n.
+  rewrite -{1}[n]addn0; move: {1 3}0 => m.
+  elim: t n m => [p|t IHt u IHu|t IH] n m /=.
+  + case: (ltnP p m) => h1; first by rewrite ltn_addl.
+    rewrite addnC subnDA nth_cat size_nseq.
+    have <-: (p - m < n) = (p < m + n).
+      by rewrite /leq -subSn // -subnDA.
+    by move: (p - m) => {p m h1} p; rewrite nth_nseq; case: ltnP.
+  + by rewrite IHt IHu.
+  + by rewrite -addnS IH.
+Qed.
+
+Lemma h_AppE cs t1 t2: h (ξ [cs] (t1 · t2)) = maxn (h (ξ [cs] t1)) (h (ξ [cs] t2)).
+Proof. by rewrite unlock. Qed.
+
+Definition hE := (h_CGrdE, h_CVarE, h_CLamE, h_CAppE, h_VarE, h_LamE, h_AppE).
+
+(* -------------------------------------------------------------------- *)
+Module SCI.
+  Fixpoint sc (c : closure) (l : nat) : closure :=
+    match c with
+    | (#(_)    )%C => c
+    | (^(n)    )%C => (#(l-n))%C
+    | (λ [c]   )%C => (λ [sc c l.+1])%C
+    | (c1 · c2 )%C => (sc c1 l · sc c2 l)%C
+    | (ξ [cs] t)%C =>
+        let fix sct t l ls : closure :=
+          match t with
+          | #n      => if   n < size ls
+                       then (#(l - nth 0 ls n))%C
+                       else if   n < size ls + size cs
+                            then nth (#0)%C [seq sc c l | c <- cs] (n - size ls)
+                            else (#(n - ((size ls + size cs) - l)))%C
+          | λ [t]   => (λ [sct t l.+1 (l.+1 :: ls)])%C
+          | t1 · t2 => ((sct t1 l ls) · (sct t2 l ls))%C
+          end
+        in
+          sct t l [::]
+    end.
+End SCI.
+
+(* -------------------------------------------------------------------- *)
+Module Type SCSig.
+  Parameter sc  : closure -> nat -> closure.
+  Parameter scE : sc = SCI.sc.
+End SCSig.
+
+Module SC : SCSig.
+  Definition sc := SCI.sc.
+
+  Lemma scE : sc = SCI.sc.
+  Proof. by []. Qed.
+End SC.
+
+Notation sc := SC.sc.
+Canonical sc_unlock := Unlockable SC.scE.
+
+(* -------------------------------------------------------------------- *)
+Fixpoint sct t l ls cs : closure :=
+  match t with
+  | #n      =>
+      let hs := [seq (^x)%C | x <- ls] ++ cs in
+               if   n < size hs
+               then nth (#0)%C [seq sc c l | c <- hs] n
+               else (#(n - (size hs - l)))%C
+  | λ [t]   => (λ [sct t l.+1 (l.+1 :: ls) cs])%C
+  | t1 · t2 => ((sct t1 l ls cs) · (sct t2 l ls cs))%C
+  end.
+
+(* -------------------------------------------------------------------- *)
+Lemma sc_CE cs t l: sc (ξ [cs] t) l = sct t l [::] cs.
+Proof.
+  rewrite unlock /= /sct unlock; move: [::] => ls.
+  elim: t l ls => [n|t IHt u IHu|t IH] l ls //.
+  * rewrite size_cat size_map; case: (ltnP _ (_ + _)); last first.
+      move=> h; case: ltnP => //= h'.
+      move: (leq_ltn_trans h h'); rewrite /leq.
+      by rewrite -addnS addnC -addnBA.
+    move=> h; case: ltnP=> h'; rewrite map_cat nth_cat !size_map.
+    + by rewrite h' -map_comp (nth_map 0).
+    + by rewrite ltnNge h'.
+  * by rewrite IHt IHu.
+  * by rewrite IH.
+Qed.
+
+Lemma sc_CGrdE n l: sc ^n l = (#(l-n))%C.
+Proof. by rewrite unlock. Qed.
+
+Lemma sc_CVarE n l: sc #n l = (#n)%C.
+Proof. by rewrite unlock. Qed.
+
+Lemma sc_CLamE c l: sc (λ [c]) l = (λ [sc c l.+1])%C.
+Proof. by rewrite unlock. Qed.
+
+Lemma sc_CAppE c1 c2 l: sc (c1 · c2) l = ((sc c1 l) · (sc c2 l))%C.
+Proof. by rewrite unlock. Qed.
+
+Lemma sc_VarE c0 cs n l:
+    sc (ξ [cs] #n) l
+  = if   n < size cs
+    then sc (nth c0 cs n) l
+    else (#(n - (size cs - l)))%C.
+Proof.
+  rewrite unlock /= add0n subn0; case:ltnP => h //.
+  by apply: nth_map.
+Qed.
+
+Lemma sc_LamE: forall cs t l,
+  sc (ξ [cs] (λ [t])) l = sc (λ [ξ [^(l.+1) :: cs] t])%C l.
+Proof.
+  have h t l ls ls' cs cs':
+       (map CGrd ls) ++ cs = (map CGrd ls') ++ cs'
+    -> sct t l ls cs = sct t l ls' cs'.
+    elim: t l ls ls' => [n|t IHt u IHu|t IH] l ls ls' h //=.
+    + by rewrite h.
+    + by rewrite !(IHt _ _ ls', IHu _ _ ls').
+    + by congr (λ [_])%C; apply: IH => /=; congr (_ :: _).
+  move=> cs t l; rewrite sc_CLamE !sc_CE /=.
+  by congr (λ [_])%C; apply h.
+Qed.
+
+Lemma sc_AppE cs t1 t2 l: sc (ξ [cs] (t1 · t2)) l = sc ((ξ [cs] t1 · ξ [cs] t2)%C) l.
+Proof. by rewrite unlock. Qed.
+
+Definition scE := (sc_CGrdE, sc_CVarE, sc_CLamE, sc_CAppE, sc_VarE, sc_LamE, sc_AppE).
+
+(* 
+*** Local Variables: ***
+*** coq-load-path: ("ALEA" "ssreflect" ".") ***
+*** End: ***
+ *)
