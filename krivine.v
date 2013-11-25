@@ -17,9 +17,14 @@ Inductive term : Type :=
 | App of term & term
 | Lam of term.
 
-Notation "# x"       := (Var x).
-Notation "t · u"     := (App t u).
-Notation "'λ' [ t ]" := (Lam t).
+Notation "# x"       := (Var x)   : lambda.
+Notation "t · u"     := (App t u) : lambda.
+Notation "'λ' [ t ]" := (Lam t)   : lambda.
+
+Bind Scope lambda with term.
+Delimit Scope lambda with L.
+
+Local Open Scope lambda.
 
 Implicit Types x i     : nat.
 Implicit Types n m     : nat.
@@ -298,27 +303,23 @@ Fixpoint ht t hs k :=
   | t1 · t2 => maxn (ht t1 hs k) (ht t2 hs k)
   end.
 
-Lemma h_CE cs t: h (ξ [cs] t) = ht t [seq h c | c <- cs] 0.
-Proof. by rewrite unlock. Qed.
-
-Lemma h_CGrdE n: h ^n = 0.
-Proof. by rewrite unlock. Qed.
-
-Lemma h_CVarE n: h #n = 0.
-Proof. by rewrite unlock. Qed.
-
-Lemma h_CLamE c: h (λ [c]) = 1 + h c.
-Proof. by rewrite unlock. Qed.
-
-Lemma h_CAppE c1 c2: h (c1 · c2) = maxn (h c1) (h c2).
-Proof. by rewrite unlock. Qed.
-
-Lemma h_VarE cs n: h (ξ [cs] #n) = nth 0 [seq h c | c <- cs] n.
-Proof. by rewrite h_CE /= subn0. Qed.
-
-Lemma h_LamE cs t k: h (ξ [cs] (λ [t])) = h (ξ [(^k)%C :: cs] t).
+Lemma hE (cl : closure * nat):
+  h cl.1 = match cl.1 with
+           | (^n              )%C => 0
+           | (#n              )%C => 0
+           | (λ [c]           )%C => (h c).+1
+           | (c1 · c2         )%C => maxn (h c1) (h c2)
+           | (ξ [cs] #n       )%C => nth 0 [seq h c | c <- cs] n
+           | (ξ [cs] (λ [t])  )%C => h (ξ [(^cl.2)%C :: cs] t)
+           | (ξ [cs] (t1 · t2))%C => maxn (h (ξ [cs] t1)) (h (ξ [cs] t2))
+           end.
 Proof.
-  rewrite !h_CE /= h_CGrdE -cat1s; move: [seq _ | _ <- _] => hs.
+  have CE cs t: h (ξ [cs] t) = ht t [seq h c | c <- cs] 0.
+    by rewrite unlock.
+  case: cl => [[t cs|n|n|c1 c2|c] l] /=; try by rewrite unlock.
+  case: t => [n|t1 t2|t] /=; try by rewrite unlock /= ?subn0.
+  rewrite !CE /=; have ->: h ^l = 0 by rewrite unlock.
+  rewrite -cat1s; move: [seq _ | _ <- _] => hs.
   have ->: [:: 0] = nseq 1 0 by []; move: 1%N => n.
   rewrite -{1}[n]addn0; move: {1 3}0 => m.
   elim: t n m => [p|t IHt u IHu|t IH] n m /=.
@@ -330,11 +331,6 @@ Proof.
   + by rewrite IHt IHu.
   + by rewrite -addnS IH.
 Qed.
-
-Lemma h_AppE cs t1 t2: h (ξ [cs] (t1 · t2)) = maxn (h (ξ [cs] t1)) (h (ξ [cs] t2)).
-Proof. by rewrite unlock. Qed.
-
-Definition hE := (h_CGrdE, h_CVarE, h_CLamE, h_CAppE, h_VarE, h_LamE, h_AppE).
 
 (* -------------------------------------------------------------------- *)
 Module SCI.
@@ -389,61 +385,49 @@ Fixpoint sct t l ls cs : closure :=
   end.
 
 (* -------------------------------------------------------------------- *)
-Lemma sc_CE cs t l: sc (ξ [cs] t) l = sct t l [::] cs.
-Proof.
-  rewrite unlock /= /sct unlock; move: [::] => ls.
-  elim: t l ls => [n|t IHt u IHu|t IH] l ls //.
-  * rewrite size_cat size_map; case: (ltnP _ (_ + _)); last first.
-      move=> h; case: ltnP => //= h'.
-      move: (leq_ltn_trans h h'); rewrite /leq.
-      by rewrite -addnS addnC -addnBA.
-    move=> h; case: ltnP=> h'; rewrite map_cat nth_cat !size_map.
-    + by rewrite h' -map_comp (nth_map 0).
-    + by rewrite ltnNge h'.
-  * by rewrite IHt IHu.
-  * by rewrite IH.
-Qed.
+Section SecE.
+  Local Open Scope closure.
 
-Lemma sc_CGrdE n l: sc ^n l = (#(l-n))%C.
-Proof. by rewrite unlock. Qed.
-
-Lemma sc_CVarE n l: sc #n l = (#n)%C.
-Proof. by rewrite unlock. Qed.
-
-Lemma sc_CLamE c l: sc (λ [c]) l = (λ [sc c l.+1])%C.
-Proof. by rewrite unlock. Qed.
-
-Lemma sc_CAppE c1 c2 l: sc (c1 · c2) l = ((sc c1 l) · (sc c2 l))%C.
-Proof. by rewrite unlock. Qed.
-
-Lemma sc_VarE c0 cs n l:
-    sc (ξ [cs] #n) l
-  = if   n < size cs
-    then sc (nth c0 cs n) l
-    else (#(n - (size cs - l)))%C.
-Proof.
-  rewrite unlock /= add0n subn0; case:ltnP => h //.
-  by apply: nth_map.
-Qed.
-
-Lemma sc_LamE: forall cs t l,
-  sc (ξ [cs] (λ [t])) l = sc (λ [ξ [^(l.+1) :: cs] t])%C l.
-Proof.
-  have h t l ls ls' cs cs':
-       (map CGrd ls) ++ cs = (map CGrd ls') ++ cs'
-    -> sct t l ls cs = sct t l ls' cs'.
-    elim: t l ls ls' => [n|t IHt u IHu|t IH] l ls ls' h //=.
-    + by rewrite h.
-    + by rewrite !(IHt _ _ ls', IHu _ _ ls').
-    + by congr (λ [_])%C; apply: IH => /=; congr (_ :: _).
-  move=> cs t l; rewrite sc_CLamE !sc_CE /=.
-  by congr (λ [_])%C; apply h.
-Qed.
-
-Lemma sc_AppE cs t1 t2 l: sc (ξ [cs] (t1 · t2)) l = sc ((ξ [cs] t1 · ξ [cs] t2)%C) l.
-Proof. by rewrite unlock. Qed.
-
-Definition scE := (sc_CGrdE, sc_CVarE, sc_CLamE, sc_CAppE, sc_VarE, sc_LamE, sc_AppE).
+  Lemma scE: forall c l,
+    sc c l = match c return closure with
+             | ^n               => #(l-n)
+             | #n               => #n
+             | λ [c]            => λ [sc c l.+1]
+             | c1 · c2          => (sc c1 l) · (sc c2 l)
+             | ξ [cs] #n        => if   n < size cs
+                                   then sc (nth (#0)%C cs n) l
+                                   else #(n - (size cs - l))
+             | ξ [cs] (λ [t])   => sc (λ [ξ [^(l.+1) :: cs] t]) l
+             | ξ [cs] (t1 · t2) => sc (ξ [cs] t1 · ξ [cs] t2) l
+             end.
+  Proof.
+    have hlam t l ls ls' cs cs':
+         (map CGrd ls) ++ cs = (map CGrd ls') ++ cs'
+      -> sct t l ls cs = sct t l ls' cs'.
+      elim: t l ls ls' => [n|t IHt u IHu|t IH] l ls ls' h //=.
+      + by rewrite h.
+      + by rewrite !(IHt _ _ ls', IHu _ _ ls').
+      + by congr (λ [_])%C; apply: IH => /=; congr (_ :: _).
+    have CE cs t l: sc (ξ [cs] t) l = sct t l [::] cs.
+      rewrite unlock /= /sct unlock; move: [::] => ls.
+      elim: t l ls => [n|t IHt u IHu|t IH] l ls //.
+      * rewrite size_cat size_map; case: (ltnP _ (_ + _)); last first.
+          move=> h; case: ltnP => //= h'.
+          move: (leq_ltn_trans h h'); rewrite /leq.
+          by rewrite -addnS addnC -addnBA.
+        move=> h; case: ltnP=> h'; rewrite map_cat nth_cat !size_map.
+        + by rewrite h' -map_comp (nth_map 0).
+        + by rewrite ltnNge h'.
+      * by rewrite IHt IHu.
+      * by rewrite IH.
+    case=> [t c|n|n|c1 c2|c] l; try by rewrite unlock.
+    case: t => [n|t1 t2|t]; try by rewrite unlock.
+    + by rewrite unlock /= add0n subn0; case:ltnP => h //; apply: nth_map.
+    + have ->: sc (λ [ξ[(^l.+1 :: c)] t]) l = λ [sc (ξ [(^l.+1 :: c)] t) l.+1].
+        by rewrite unlock.
+      by rewrite !CE /=; congr (λ [_])%C; apply hlam.
+  Qed.
+End SecE.  
 
 (* 
 *** Local Variables: ***
