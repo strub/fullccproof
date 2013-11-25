@@ -260,6 +260,45 @@ Fixpoint is_ephemeral c :=
   end.
 
 (* -------------------------------------------------------------------- *)
+Fixpoint ephemeral_of_term (t : term) : closure :=
+  match t with
+  | #n      => (#n)%C
+  | λ [t]   => (λ [ephemeral_of_term t])%C
+  | t1 · t2 => (ephemeral_of_term t1 · ephemeral_of_term t2)%C
+  end.
+
+Fixpoint term_of_ephemeral (w : term) (c : closure) : term :=
+  match c with
+  | (#n     )%C => #n
+  | (λ [c]  )%C => λ [term_of_ephemeral w c]
+  | (c1 · c2)%C => term_of_ephemeral w c1 · term_of_ephemeral w c2
+  | _           => w
+  end.
+
+(* -------------------------------------------------------------------- *)
+Lemma ephemeral_of_termK w: cancel ephemeral_of_term (term_of_ephemeral w).
+Proof. by elim=> /= [n|t -> u ->|t ->]. Qed.
+
+Lemma term_of_ephemeralK w:
+  {in is_ephemeral, cancel (term_of_ephemeral w) ephemeral_of_term}.
+Proof.
+  elim=> /= [t cs|n|n|c1 IH1 c2 IH2|c IH] //=; rewrite /in_mem /=.
+  + by case/andP=> Ec1 Ec2; rewrite !(IH1, IH2).
+  + by move=> Ec; rewrite IH.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Inductive ephemeral : Type := Ephemeral c of is_ephemeral c.
+
+Coercion closure_of_ephemeral e := let: Ephemeral c _ := e in c.
+
+Canonical Structure ephemeral_subType :=
+  [subType for closure_of_ephemeral by ephemeral_rect].
+
+Definition ephemeral_eqMixin := [eqMixin of ephemeral by <:].
+Canonical Structure ephemeral_eqType := Eval hnf in EqType ephemeral ephemeral_eqMixin.
+
+(* -------------------------------------------------------------------- *)
 Module HeightI.
   Fixpoint h (c : closure) : nat :=
     match c with
@@ -373,20 +412,37 @@ Notation sc := SC.sc.
 Canonical sc_unlock := Unlockable SC.scE.
 
 (* -------------------------------------------------------------------- *)
-Fixpoint sct t l ls cs : closure :=
+Fixpoint sct cs t l : closure :=
   match t with
-  | #n      =>
-      let hs := [seq (^x)%C | x <- ls] ++ cs in
-               if   n < size hs
-               then nth (#0)%C [seq sc c l | c <- hs] n
-               else (#(n - (size hs - l)))%C
-  | λ [t]   => (λ [sct t l.+1 (l.+1 :: ls) cs])%C
-  | t1 · t2 => ((sct t1 l ls cs) · (sct t2 l ls cs))%C
+  | #n      => if   n < size cs
+               then sc (nth (#0)%C cs n) l
+               else (#(n - (size cs - l)))%C
+  | λ [t]   => (λ [sct (^l.+1 :: cs) t l.+1])%C
+  | t1 · t2 => ((sct cs t1 l) · (sct cs t2 l))%C
   end.
 
 (* -------------------------------------------------------------------- *)
 Section SecE.
   Local Open Scope closure.
+
+  Lemma scCE cs t l: sc (ξ [cs] t) l = sct cs t l.
+  Proof.
+    rewrite unlock /=; apply/esym.
+    have {1}->: cs = (map CGrd [::]) ++ cs by [].
+    set ls := [::]; set hs := _ ++ _.
+    have e: hs = [seq ^x | x <- ls] ++ cs by [].
+    elim: t l ls hs e => [n|t1 IH1 t2 IH2|t IH] /= l ls hs e.
+    + rewrite e size_cat size_map; case: (ltnP _ (_ + _)); last first.
+        move=> h; case: ltnP => //= h'.
+        move: (leq_ltn_trans h h'); rewrite /leq.
+        by rewrite -addnS addnC -addnBA.
+      move=> h; case: ltnP=> h'; rewrite nth_cat !size_map.
+      + by rewrite h' (nth_map 0) // unlock.
+      + rewrite ltnNge h' /= (nth_map #0) 1?unlock //.
+        by rewrite -(ltn_add2l (size ls)) subnKC.
+    + by rewrite !(IH1 _ ls, IH2 _ ls).
+    + by rewrite (IH l.+1 (l.+1::ls)) //= e.
+  Qed.
 
   Lemma scE: forall c l,
     sc c l = match c return closure with
@@ -401,33 +457,26 @@ Section SecE.
              | ξ [cs] (t1 · t2) => sc (ξ [cs] t1 · ξ [cs] t2) l
              end.
   Proof.
-    have hlam t l ls ls' cs cs':
-         (map CGrd ls) ++ cs = (map CGrd ls') ++ cs'
-      -> sct t l ls cs = sct t l ls' cs'.
-      elim: t l ls ls' => [n|t IHt u IHu|t IH] l ls ls' h //=.
-      + by rewrite h.
-      + by rewrite !(IHt _ _ ls', IHu _ _ ls').
-      + by congr (λ [_])%C; apply: IH => /=; congr (_ :: _).
-    have CE cs t l: sc (ξ [cs] t) l = sct t l [::] cs.
-      rewrite unlock /= /sct unlock; move: [::] => ls.
-      elim: t l ls => [n|t IHt u IHu|t IH] l ls //.
-      * rewrite size_cat size_map; case: (ltnP _ (_ + _)); last first.
-          move=> h; case: ltnP => //= h'.
-          move: (leq_ltn_trans h h'); rewrite /leq.
-          by rewrite -addnS addnC -addnBA.
-        move=> h; case: ltnP=> h'; rewrite map_cat nth_cat !size_map.
-        + by rewrite h' -map_comp (nth_map 0).
-        + by rewrite ltnNge h'.
-      * by rewrite IHt IHu.
-      * by rewrite IH.
     case=> [t c|n|n|c1 c2|c] l; try by rewrite unlock.
     case: t => [n|t1 t2|t]; try by rewrite unlock.
     + by rewrite unlock /= add0n subn0; case:ltnP => h //; apply: nth_map.
     + have ->: sc (λ [ξ[(^l.+1 :: c)] t]) l = λ [sc (ξ [(^l.+1 :: c)] t) l.+1].
         by rewrite unlock.
-      by rewrite !CE /=; congr (λ [_])%C; apply hlam.
+      by rewrite !scCE /=.
   Qed.
 End SecE.  
+
+(* -------------------------------------------------------------------- *)
+Lemma sc_is_ephemeral c l: is_ephemeral (sc c l).
+Proof.
+  elim/clind: c l => [t cs IH|n|n|c1 c2 IH1 IH2|c IH] l;
+    try by rewrite scE //=; do? (apply/andP; split).
+  rewrite scCE; elim: t cs IH l => [n|t1 IH1 t2 IH2|t IH] cs IHcs l /=.
+  + admit.
+  + by rewrite !(IH1, IH2).
+  + rewrite IH // => c; rewrite in_cons => /orP [/eqP->|/IHcs //].
+    by move=> l'; rewrite scE.
+Qed.
 
 (* 
 *** Local Variables: ***
