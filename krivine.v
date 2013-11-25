@@ -472,7 +472,7 @@ Proof.
   elim/clind: c l => [t cs IH|n|n|c1 c2 IH1 IH2|c IH] l;
     try by rewrite scE //=; do? (apply/andP; split).
   rewrite scCE; elim: t cs IH l => [n|t1 IH1 t2 IH2|t IH] cs IHcs l /=.
-  + admit.
+  + by case: ltnP => // lt_n_szcs; rewrite IHcs // mem_nth.
   + by rewrite !(IH1, IH2).
   + rewrite IH // => c; rewrite in_cons => /orP [/eqP->|/IHcs //].
     by move=> l'; rewrite scE.
