@@ -260,27 +260,27 @@ Fixpoint is_ephemeral c :=
   end.
 
 (* -------------------------------------------------------------------- *)
-Fixpoint ephemeral_of_term (t : term) : closure :=
+Fixpoint closure_of_term (t : term) : closure :=
   match t with
   | #n      => (#n)%C
-  | λ [t]   => (λ [ephemeral_of_term t])%C
-  | t1 · t2 => (ephemeral_of_term t1 · ephemeral_of_term t2)%C
+  | λ [t]   => (λ [closure_of_term t])%C
+  | t1 · t2 => (closure_of_term t1 · closure_of_term t2)%C
   end.
 
-Fixpoint term_of_ephemeral (w : term) (c : closure) : term :=
+Fixpoint term_of_closure (w : term) (c : closure) : term :=
   match c with
   | (#n     )%C => #n
-  | (λ [c]  )%C => λ [term_of_ephemeral w c]
-  | (c1 · c2)%C => term_of_ephemeral w c1 · term_of_ephemeral w c2
+  | (λ [c]  )%C => λ [term_of_closure w c]
+  | (c1 · c2)%C => term_of_closure w c1 · term_of_closure w c2
   | _           => w
   end.
 
 (* -------------------------------------------------------------------- *)
-Lemma ephemeral_of_termK w: cancel ephemeral_of_term (term_of_ephemeral w).
+Lemma closure_of_termK w: cancel closure_of_term (term_of_closure w).
 Proof. by elim=> /= [n|t -> u ->|t ->]. Qed.
 
-Lemma term_of_ephemeralK w:
-  {in is_ephemeral, cancel (term_of_ephemeral w) ephemeral_of_term}.
+Lemma term_of_closureK w:
+  {in is_ephemeral, cancel (term_of_closure w) closure_of_term}.
 Proof.
   elim=> /= [t cs|n|n|c1 IH1 c2 IH2|c IH] //=; rewrite /in_mem /=.
   + by case/andP=> Ec1 Ec2; rewrite !(IH1, IH2).
@@ -297,6 +297,25 @@ Canonical Structure ephemeral_subType :=
 
 Definition ephemeral_eqMixin := [eqMixin of ephemeral by <:].
 Canonical Structure ephemeral_eqType := Eval hnf in EqType ephemeral ephemeral_eqMixin.
+
+(* -------------------------------------------------------------------- *)
+Lemma is_ephemeral_t2c (t : term): is_ephemeral (closure_of_term t).
+Proof. by elim: t => /= [n|t -> u ->|t ->]. Qed.
+
+Definition ephemeral_of_term (t : term) :=
+  @Ephemeral (closure_of_term t) (is_ephemeral_t2c t).
+
+Definition term_of_ephemeral (e : ephemeral) :=
+  term_of_closure #0 e.
+
+Lemma ephemeral_of_termK: cancel ephemeral_of_term term_of_ephemeral.
+Proof. by move=> t; rewrite /term_of_ephemeral closure_of_termK. Qed.
+
+Lemma term_of_ephemeralK: cancel term_of_ephemeral ephemeral_of_term.
+Proof.
+  case=> t Et; rewrite /ephemeral_of_term; apply/eqP.
+  by rewrite eqE /= term_of_closureK.
+Qed.
 
 (* -------------------------------------------------------------------- *)
 Module HeightI.
@@ -477,6 +496,18 @@ Proof.
   + rewrite IH // => c; rewrite in_cons => /orP [/eqP->|/IHcs //].
     by move=> l'; rewrite scE.
 Qed.
+
+(* -------------------------------------------------------------------- *)
+Definition σc (c : closure) (l : nat) :=
+  @Ephemeral (sc c l) (sc_is_ephemeral c l).
+
+(* -------------------------------------------------------------------- *)
+Coercion term_of_ephemeral : ephemeral >-> term.
+
+Lemma L B N ρ ρ' l:
+    σc (ξ [(ξ [ρ] N)%C :: ρ'] B) l
+  = σc (ξ [ρ'] (B[!0 ← σc (ξ [ρ] N) l])) l.
+Proof. Admitted.
 
 (* 
 *** Local Variables: ***
