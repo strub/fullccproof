@@ -1,3 +1,4 @@
+
 (* -------------------------------------------------------------------- *)
 Require Import ssreflect eqtype ssrbool ssrnat ssrfun seq.
 
@@ -508,6 +509,50 @@ Lemma L B N ρ ρ' l:
     σc (ξ [(ξ [ρ] N)%C :: ρ'] B) l
   = σc (ξ [ρ'] (B[!0 ← σc (ξ [ρ] N) l])) l.
 Proof. Admitted.
+
+
+(* -------------------------------------------------------------------- *)
+(* Small-step call-by-name *)
+
+Fixpoint cbn (t : term) : option term :=
+  match t with
+    | # n   => None
+    | λ [b] => None
+    | m · n => match cbn m with
+                 | Some m' =>
+                   match m' with
+                     | λ [b] => Some (subst 0 n b)
+                     | _     => Some (m' · n)
+                   end
+                 | None => None
+               end
+  end.
+
+(* -------------------------------------------------------------------- *)
+(* Small-step normal order *)
+
+Fixpoint nor (t : term) : option term :=
+  match t with
+    | # n   => None
+    | λ [b] => match nor b with
+                 | Some b' => Some (λ [b'])
+                 | None    => None
+               end
+    | m · n => match cbn m with
+                 | Some m' => match m' with
+                                | λ [b] => Some (subst 0 n b)
+                                | _     => Some (m' · n)
+                              end
+                 | None    => match nor m with
+                                | Some m' => Some (m' · n)
+                                | None    => match nor n with
+                                               | Some n' => Some (m · n')
+                                               | None    => None
+                                             end
+                              end
+               end
+  end.
+
 
 (* 
 *** Local Variables: ***
