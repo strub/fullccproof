@@ -1,6 +1,6 @@
 
 (* -------------------------------------------------------------------- *)
-Require Import ssreflect eqtype ssrbool ssrnat ssrfun seq.
+Require Import ssreflect eqtype ssrbool ssrnat ssrfun seq Recdef.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -185,6 +185,13 @@ Notation "^ x"         := (CGrd x)     : closure.
 Notation "# x"         := (CVar x)     : closure.
 Notation "c1 · c2"     := (CApp c1 c2) : closure.
 Notation "'λ' [ c ]"   := (CLam c)     : closure.
+
+(******* ALVARO *******)
+(* I would keep Ind as the constructor for terms and Lev (or CLev if you
+   prefer) as the one for closures. They both represent variables, but in
+   different manners. This difference would be better conceived if we swap the
+   # and ^ notation in closures (notice that ground indices are de Bruijn
+   indices, but de Bruijn levels are something else). *)
 
 Bind Scope closure with closure.
 Delimit Scope closure with C.
@@ -513,7 +520,6 @@ Proof. Admitted.
 
 (* -------------------------------------------------------------------- *)
 (* Small-step call-by-name *)
-
 Fixpoint cbn (t : term) : option term :=
   match t with
     | # n   => None
@@ -530,7 +536,6 @@ Fixpoint cbn (t : term) : option term :=
 
 (* -------------------------------------------------------------------- *)
 (* Small-step normal order *)
-
 Fixpoint nor (t : term) : option term :=
   match t with
     | # n   => None
@@ -553,8 +558,78 @@ Fixpoint nor (t : term) : option term :=
                end
   end.
 
+(* -------------------------------------------------------------------- *)
+(* Small-step closure call-by-name *)
+Function clos_cbn (c : closure) (l : nat) {measure h c}: option closure :=
+  match c with
+    | (ξ [env] t)%C =>
+      match t with
+        | # n =>
+          match nth (^ 0)%C env n with
+            | ((ξ [_] _)%C | (# _)%C) as c' => clos_cbn c' l
+            | (^ 0)%C => Some  (# (n - (length env - l)))%C
+            | _       => None (* imp. case *)
+                 end
+        | λ [b] => Some (λ [(ξ [# (l + 1) :: env] b)%C])%C
+        | m · n => Some ((ξ [env] m)%C · (ξ [env] n)%C)%C
+      end
+    | (# n)%C     => Some (# (l - n))%C
+    | (λ [cb])%C  => None
+    | (cm · cn)%C => match clos_cbn cm l with
+                   | Some cm' =>
+                     match cm' with
+                       | (λ [(ξ [# n :: env'] t)%C])%C =>
+                         Some ((ξ [cn :: env'] t)%C)
+                       | (λ [cb])%C                => None (* imp. case *)
+                       | _                     => Some (cm' · cn)%C
+                     end
+                   | None => None
+                 end
+    | (^ n)%C     => None
+  end.
 
-(* 
+(* -------------------------------------------------------------------- *)
+(* Small-step closure normal order *)
+Fixpoint clos_nor (c : closure) (l : nat) : option closure :=
+  match c with
+    | (ξ [env] t)%C =>
+      match t with
+        | # n => match nth n env (^ 0) with
+                   | (ξ [_] _ | # _) as c' => clos_nor c' l
+                   | ^ 0                   => Some  (# (n - (length env - l)))
+                   | _                     => None (* imp. case *)
+                 end
+        | λ [b] => Some (λ [ξ [# (l + 1) : env] b])
+        | m · n => Some ((ξ [env] m) · (ξ [env] n))
+      end
+    | # n     => # (l - n)
+    | λ [cb]  => let ob = clos_nor cb (l + 1)
+                 in match ob with
+                      | (Some cb') => Some (λ [cb'])
+                      | None       => None
+                    end
+    | cm · cn => match clos_cbn cm l with
+                   | Some cm' =>
+                     match cm' with
+                       | λ [ξ [# l' :: env'] t] => Some (ξ [cn :: env'] t)
+                       | _                     =>
+                         let om = clos_nor cm' l
+                         in match om with
+                              | Some cm'' =>
+                                let on = clos_nor cn l
+                                in match on with
+                                     | Some cn' => Some (cm'' · cn')
+                                     | None     => None
+                                   end
+                              | None      => None
+                            end
+                     end
+                   | None => None
+                 end
+    | ^ n     => None
+  end.
+
+(*
 *** Local Variables: ***
 *** coq-load-path: ("ALEA" "ssreflect" ".") ***
 *** End: ***
