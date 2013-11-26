@@ -188,10 +188,23 @@ Notation "'λ' [ c ]"   := (CLam c)     : closure.
 
 (******* ALVARO *******)
 (* I would keep Ind as the constructor for terms and Lev (or CLev if you
-   prefer) as the one for closures. They both represent variables, but in
-   different manners. This difference would be better conceived if we swap the
-   # and ^ notation in closures (notice that ground indices are de Bruijn
-   indices, but de Bruijn levels are something else). *)
+prefer) as the one for closures. They both represent variables, but in
+different manners. This difference would be better conceived if we swap the #
+and ^ notation in closures (notice that ground indices are de Bruijn indices,
+but de Bruijn levels are something else).
+
+Besides, to avoid using the %C thing (I don't actually know the precise
+semantics of %C in Coq, I just took it from your code) be could follow this
+convention:
+
+  Term constructors:     # λ ·
+  Closure constructors : ξ (proper closures)
+                         λλ (closure abstraction)
+                         ∘ (closure application)
+                         ^ (levels)
+                         ⌊ ⌋ (gorund indices)
+
+What do you think? *)
 
 Bind Scope closure with closure.
 Delimit Scope closure with C.
@@ -344,6 +357,23 @@ Module HeightI.
           ht t [seq h c | c <- cs] 0
     end.
 End HeightI.
+
+(******* ALVARO *******)
+(* I realised that the h function has to be ammended:
+
+            h(#n[ρ]) = { 1 + h(nth n ρ)  if n < |ρ|
+                       { 0               if n >= |ρ|
+         h((λ B)[ρ]) = h(λλ (B[^0 : ρ]))
+              h(M N) = h((M[ρ])∘(N[ρ]))
+               h(^n) = 0
+              h(⌊n⌋) = 0
+             h(λλ C) = 1 + h(C)
+            h(C1∘C2) = 1 + max{h(C1),h(C2)}
+
+The height has to be incremented every time that we retrieve a binding form
+the environment, and with every closure constructor. Term abstraction and
+application can be just lifted to their closure analogous. I don't want to
+change it myself for if I break your code somewhere else. *)
 
 (* -------------------------------------------------------------------- *)
 Module Type HeightSig.
@@ -522,112 +552,126 @@ Proof. Admitted.
 (* Small-step call-by-name *)
 Fixpoint cbn (t : term) : option term :=
   match t with
-    | # n   => None
-    | λ [b] => None
-    | m · n => match cbn m with
-                 | Some m' =>
-                   match m' with
-                     | λ [b] => Some (subst 0 n b)
-                     | _     => Some (m' · n)
-                   end
-                 | None => None
-               end
+    | #n   => None
+    | λ[b] => None
+    | m·n => match cbn m with
+               | Some m' =>
+                 match m' with
+                   | λ[b] => Some (subst 0 n b)
+                   | _    => Some (m' · n)
+                 end
+               | None => None
+             end
   end.
 
 (* -------------------------------------------------------------------- *)
 (* Small-step normal order *)
 Fixpoint nor (t : term) : option term :=
   match t with
-    | # n   => None
-    | λ [b] => match nor b with
-                 | Some b' => Some (λ [b'])
-                 | None    => None
-               end
-    | m · n => match cbn m with
-                 | Some m' => match m' with
-                                | λ [b] => Some (subst 0 n b)
-                                | _     => Some (m' · n)
-                              end
-                 | None    => match nor m with
-                                | Some m' => Some (m' · n)
-                                | None    => match nor n with
-                                               | Some n' => Some (m · n')
-                                               | None    => None
-                                             end
-                              end
-               end
+    | #n   => None
+    | λ[b] => match nor b with
+                | Some b' => Some (λ [b'])
+                | None    => None
+              end
+    | m·n  => match cbn m with
+                | Some m' => match m' with
+                               | λ[b] => Some (subst 0 n b)
+                               | _    => Some (m' · n)
+                             end
+                | None    => match nor m with
+                               | Some m' => Some (m' · n)
+                               | None    => match nor n with
+                                              | Some n' => Some (m · n')
+                                              | None    => None
+                                            end
+                             end
+              end
   end.
 
 (* -------------------------------------------------------------------- *)
 (* Small-step closure call-by-name *)
 Function clos_cbn (c : closure) (l : nat) {measure h c}: option closure :=
   match c with
-    | (ξ [env] t)%C =>
+    | (ξ[env]t)%C =>
       match t with
-        | # n =>
+        | #n =>
           match nth (^ 0)%C env n with
-            | ((ξ [_] _)%C | (# _)%C) as c' => clos_cbn c' l
-            | (^ 0)%C => Some  (# (n - (length env - l)))%C
+            | ((ξ[_]_)%C | (#_)%C) as c' => clos_cbn c' l
+            | (^ 0)%C => Some (#(n - (length env - l)))%C
             | _       => None (* imp. case *)
                  end
-        | λ [b] => Some (λ [(ξ [# (l + 1) :: env] b)%C])%C
-        | m · n => Some ((ξ [env] m)%C · (ξ [env] n)%C)%C
+        | λ[b] => Some (λ[(ξ[#(l + 1)::env]b)%C])%C
+        | m·n  => Some ((ξ[env]m)%C·(ξ[env]n)%C)%C
       end
-    | (# n)%C     => Some (# (l - n))%C
-    | (λ [cb])%C  => None
-    | (cm · cn)%C => match clos_cbn cm l with
+    | (#n)%C    => Some (# (l - n))%C
+    | (λ[cb])%C => None
+    | (cm·cn)%C => match clos_cbn cm l with
                    | Some cm' =>
                      match cm' with
-                       | (λ [(ξ [# n :: env'] t)%C])%C =>
-                         Some ((ξ [cn :: env'] t)%C)
-                       | (λ [cb])%C                => None (* imp. case *)
-                       | _                     => Some (cm' · cn)%C
+                       | (λ[(ξ[#n::env']t)%C])%C =>
+                         Some ((ξ[cn::env']t)%C)
+                       | (λ[cb])%C => None (* imp. case *)
+                       | _         => Some (cm'·cn)%C
                      end
                    | None => None
                  end
-    | (^ n)%C     => None
+    | (^n)%C      => None
   end.
+Proof.
+(* Subgoal 1*)
+intros.
+(* unfold h at 2. *)
+admit.
+(* Subgoal 2*)
+intros.
+admit.
+(* Subgoal 3*)
+intros.
+admit.
+Qed.
 
 (* -------------------------------------------------------------------- *)
 (* Small-step closure normal order *)
-Fixpoint clos_nor (c : closure) (l : nat) : option closure :=
+Function clos_nor (c : closure) (l : nat) {measure h c} : option closure :=
   match c with
-    | (ξ [env] t)%C =>
+    | (ξ[env]t)%C =>
       match t with
-        | # n => match nth n env (^ 0) with
-                   | (ξ [_] _ | # _) as c' => clos_nor c' l
-                   | ^ 0                   => Some  (# (n - (length env - l)))
-                   | _                     => None (* imp. case *)
-                 end
-        | λ [b] => Some (λ [ξ [# (l + 1) : env] b])
-        | m · n => Some ((ξ [env] m) · (ξ [env] n))
+        | #n   => match nth (^ 0)%C env n with
+                    | ((ξ[_]_)%C | (#_)%C) as c' => clos_nor c' l
+                    | (^0)%C => Some (#(n - (length env - l)))%C
+                    | _      => None (* imp. case *)
+                  end
+        | λ[b] => Some (λ[(ξ[#(l + 1)::env]b)%C])%C
+        | m·n  => Some ((ξ[env]m)%C·(ξ[env]n)%C)%C
       end
-    | # n     => # (l - n)
-    | λ [cb]  => let ob = clos_nor cb (l + 1)
-                 in match ob with
-                      | (Some cb') => Some (λ [cb'])
-                      | None       => None
-                    end
-    | cm · cn => match clos_cbn cm l with
-                   | Some cm' =>
-                     match cm' with
-                       | λ [ξ [# l' :: env'] t] => Some (ξ [cn :: env'] t)
-                       | _                     =>
-                         let om = clos_nor cm' l
-                         in match om with
-                              | Some cm'' =>
-                                let on = clos_nor cn l
-                                in match on with
-                                     | Some cn' => Some (cm'' · cn')
-                                     | None     => None
-                                   end
-                              | None      => None
-                            end
+    | (# n)%C     => Some (#(l - n))%C
+    | (λ [cb])%C  => let ob := clos_nor cb (l + 1)
+                     in match ob with
+                          | (Some cb') => Some (λ[cb'])%C
+                          | None       => None
+                        end
+    | (cm · cn)%C => match clos_cbn cm l with
+                       | Some cm' =>
+                         match cm' with
+                           | (λ[(ξ[(#l')%C::env']t)%C])%C =>
+                             Some (ξ[cn::env']t)%C
+                           | _ =>
+                             let om := clos_nor cm' l
+                             in match om with
+                                  | Some cm'' =>
+                                    let on := clos_nor cn l
+                                    in match on with
+                                         | Some cn' => Some (cm''·cn')%C
+                                         | None     => None
+                                       end
+                                  | None => None
+                                end
+                         end
+                       | None => None
                      end
-                   | None => None
-                 end
-    | ^ n     => None
+    | (^n)%C => None
   end.
+Proof.
 
 (*
 *** Local Variables: ***
