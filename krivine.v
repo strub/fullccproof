@@ -608,11 +608,16 @@ Proof.
   rewrite (nth_map ⌊0⌋) ?teq1 //.
   rewrite ltnNge; apply/negP => le_szr_n; move: teq1.
   by rewrite nth_default.
-
-  have hB : n < size r. admit.
-  (* rewrite -> (nth_map n (fun c0 => (h c0).+1)). *)
-  (* I dont see how to apply nth_map *)
-  admit. admit. admit.
+  (* Subgoal 2 *)
+  intros.
+  rewrite (hE (ξ [r] #n)).
+  rewrite (nth_map ⌊0⌋) ?teq1 //.
+  rewrite ltnNge; apply/negP => le_szr_n; move: teq1.
+  by rewrite nth_default.
+  (* Subgoal 3 *)
+  intros.
+  rewrite (hE (cm ○ cn)).
+  admit.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -759,16 +764,95 @@ Qed.
 (* -------------------------------------------------------------------- *)
 Fixpoint iscexp_r (b : bool)(c : closure) : bool :=
   match c with
-    | (λ[cb])%C => b && iscexp_r true cb
-    | (^_)%C    => true
-    | ((λ[(ξ[(#_)%C::_]_)%C])%C·_)%C => true
-    | (c1·c2)%C => (iscexp_r false c1) || (iscnf_r false c1 && iscnf_r true c2)
-    | _         => false
+    | λλ [cb] => b && iscexp_r true cb
+    | ⌊_⌋     => true
+    | (λλ [ξ [^_ :: _] _]) ○ _ => true
+    | c1 ○ c2 => (iscexp_r false c1) || (iscnf_r false c1 && iscnf_r true c2)
+    | _       => false
   end.
 
 Definition iscexp := fun c => iscexp_r true c.
 
+(* -------------------------------------------------------------------- *)
+(* Call-by-name beta contraction *)
+Function cbn_beta (c : closure) : option closure :=
+  match c with
+    | ξ [r] t => None
+    | λλ [cb] => None
+    | ^n      => None
+    | (λλ [ξ [^_ :: r] b]) ○ cn => Some (ξ [cn :: r] b)
+    | cm ○ cn => let om := cbn_beta cm
+                 in match om with
+                      | Some cm' => Some (cm' ○ cn)
+                      | None     => None
+                    end
+    | ⌊_⌋ => None
+  end.
 
+(* -------------------------------------------------------------------- *)
+(* Normal order beta contraction *)
+Function nor_beta (c : closure) (l : nat) : option closure :=
+  match c with
+    | ξ [r] t => None
+    | λλ [cb] => let ob := nor_beta cb (l + 1)
+                 in match ob with
+                      | Some cb' => Some (λλ [cb'])
+                      | None     => None
+                    end
+    | ^n      => None
+    | (λλ [ξ [^_ :: r] b]) ○ cn => Some (ξ [cn :: r] b)
+    | cm ○ cn =>
+      let om := cbn_beta cm
+      in match om with
+           | Some cm' => Some (cm' ○ cn)
+           | None     =>
+             let om' := nor_beta cm l
+             in match om' with
+                  | Some cm'' => Some (cm'' ○ cn)
+                  | None      => let on := nor_beta cn l
+                                 in match on with
+                                      | Some cn' => Some (cm ○ cn')
+                                      | None     => None
+                                    end
+                end
+         end
+    | ⌊_⌋ => None
+  end.
+
+(* -------------------------------------------------------------------- *)
+(* Lemma: ephemeral expansion coincides with multiple-step normal order *)
+
+Fixpoint times_opt {A : Type} (n : nat) (f : A -> option A) (a : A)
+: option A :=
+  match n with
+    | O    => Some a
+    | S n' => let oa := f a
+              in match oa with
+                   | Some a' => times_opt n' f a'
+                   | None    => None
+                 end
+  end.
+
+Lemma eph_mult_nor :
+  forall (c : closure) (l : nat), exists (n : nat),
+    times_opt n (fun c => clos_nor c 0) c = Some (nor_eph_exp c l).
+Proof.
+  admit.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+(* Theorem: reduction commutes with sigmac *)
+
+Definition map_option {A B : Type} (f : A -> B) (o : option A) : option B :=
+  match o with
+    | Some x => Some (f x)
+    | None   => None
+  end.
+
+Theorem red_comm_sc :
+  forall (t : term),
+    map_option (fun c => sc c 0) (nor_beta (nor_eph_exp (ξ [[::]] t) 0) 0) =
+    map_option closure_of_term (nor t).
 
 (*
 *** Local Variables: ***
