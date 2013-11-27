@@ -173,7 +173,7 @@ Inductive bn : term -> term -> Prop :=
 Inductive closure : Type :=
 | CClo  of term & seq closure
 | CGrd  of nat
-| CVar  of nat
+| CLvl  of nat
 | CApp  of closure & closure
 | CLam  of closure.
 
@@ -181,8 +181,8 @@ Implicit Types c : closure.
 Implicit Types cs : seq closure.
 
 Notation "'ξ' [ c ] t" := (CClo t c)   : closure.
-Notation "^ x"         := (CGrd x)     : closure.
-Notation "# x"         := (CVar x)     : closure.
+Notation "^ x"         := (CLvl x)     : closure.
+Notation "# x"         := (CGrd x)     : closure.
 Notation "c1 · c2"     := (CApp c1 c2) : closure.
 Notation "'λ' [ c ]"   := (CLam c)     : closure.
 
@@ -358,23 +358,6 @@ Module HeightI.
     end.
 End HeightI.
 
-(******* ALVARO *******)
-(* I realised that the h function has to be ammended:
-
-            h(#n[ρ]) = { 1 + h(nth n ρ)  if n < |ρ|
-                       { 0               if n >= |ρ|
-         h((λ B)[ρ]) = h(λλ (B[^0 : ρ]))
-              h(M N) = h((M[ρ])∘(N[ρ]))
-               h(^n) = 0
-              h(⌊n⌋) = 0
-             h(λλ C) = 1 + h(C)
-            h(C1∘C2) = 1 + max{h(C1),h(C2)}
-
-The height has to be incremented every time that we retrieve a binding form
-the environment, and with every closure constructor. Term abstraction and
-application can be just lifted to their closure analogous. I don't want to
-change it myself for if I break your code somewhere else. *)
-
 (* -------------------------------------------------------------------- *)
 Module Type HeightSig.
   Parameter h  : closure -> nat.
@@ -399,13 +382,31 @@ Fixpoint ht t hs k :=
   | t1 · t2 => maxn (ht t1 hs k) (ht t2 hs k)
   end.
 
+
+(******* ALVARO *******)
+(* I realised that the h function has to be ammended:
+
+            h(#n[ρ]) = { 1 + h(nth n ρ)  if n < |ρ|
+                       { 0               if n >= |ρ|
+         h((λ B)[ρ]) = h(λλ (B[^0 : ρ]))
+              h(M N) = h((M[ρ])∘(N[ρ]))
+               h(^n) = 0
+              h(⌊n⌋) = 0
+             h(λλ C) = 1 + h(C)
+            h(C1∘C2) = 1 + max{h(C1),h(C2)}
+
+The height has to be incremented every time that we retrieve a binding form
+the environment, and with every closure constructor. Term abstraction and
+application can be just lifted to their closure analogous. I don't want to
+change it myself for if I break your code somewhere else. *)
+
 Lemma hE (cl : closure * nat):
   h cl.1 = match cl.1 with
            | (^n              )%C => 0
            | (#n              )%C => 0
            | (λ [c]           )%C => (h c).+1
-           | (c1 · c2         )%C => maxn (h c1) (h c2)
-           | (ξ [cs] #n       )%C => nth 0 [seq h c | c <- cs] n
+           | (c1 · c2         )%C => (maxn (h c1) (h c2)).+1
+           | (ξ [cs] #n       )%C => (nth 0 [seq h c | c <- cs] n).+1
            | (ξ [cs] (λ [t])  )%C => h (ξ [(^cl.2)%C :: cs] t)
            | (ξ [cs] (t1 · t2))%C => maxn (h (ξ [cs] t1)) (h (ξ [cs] t2))
            end.
