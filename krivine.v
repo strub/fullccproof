@@ -605,6 +605,10 @@ Proof.
   (* Subgoal 1 *)
   intros.
   rewrite (hE (ξ [r] #n)).
+  rewrite (nth_map ⌊0⌋) ?teq1 //.
+  rewrite ltnNge; apply/negP => le_szr_n; move: teq1.
+  by rewrite nth_default.
+
   have hB : n < size r. admit.
   (* rewrite -> (nth_map n (fun c0 => (h c0).+1)). *)
   (* I dont see how to apply nth_map *)
