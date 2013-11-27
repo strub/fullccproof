@@ -537,16 +537,16 @@ Proof. by rewrite sc_id_eph // sc_is_ephemeral. Qed.
 (* Small-step call-by-name *)
 Fixpoint cbn (t : term) : option term :=
   match t with
-    | #n   => None
-    | λ[b] => None
-    | m·n => match cbn m with
-               | Some m' =>
-                 match m' with
-                   | λ[b] => Some (subst 0 n b)
-                   | _    => Some (m' · n)
-                 end
-               | None => None
-             end
+    | #n    => None
+    | λ [b] => None
+    | m · n => match cbn m with
+                 | Some m' =>
+                   match m' with
+                     | λ [b] => Some (subst 0 n b)
+                     | _     => Some (m' · n)
+                   end
+                 | None => None
+               end
   end.
 
 (* -------------------------------------------------------------------- *)
@@ -554,98 +554,102 @@ Fixpoint cbn (t : term) : option term :=
 Fixpoint nor (t : term) : option term :=
   match t with
     | #n   => None
-    | λ[b] => match nor b with
-                | Some b' => Some (λ [b'])
-                | None    => None
-              end
-    | m·n  => match cbn m with
-                | Some m' => match m' with
-                               | λ[b] => Some (subst 0 n b)
-                               | _    => Some (m' · n)
+    | λ [b] => match nor b with
+                 | Some b' => Some (λ [b'])
+                 | None    => None
+               end
+    | m · n  => match cbn m with
+                  | Some m' => match m' with
+                                 | λ [b] => Some (subst 0 n b)
+                                 | _     => Some (m' · n)
                              end
-                | None    => match nor m with
-                               | Some m' => Some (m' · n)
-                               | None    => match nor n with
-                                              | Some n' => Some (m · n')
-                                              | None    => None
-                                            end
-                             end
-              end
+                  | None    => match nor m with
+                                 | Some m' => Some (m' · n)
+                                 | None    => match nor n with
+                                                | Some n' => Some (m · n')
+                                                | None    => None
+                                              end
+                               end
+                end
   end.
 
 (* -------------------------------------------------------------------- *)
 (* Small-step closure call-by-name *)
 Function clos_cbn (c : closure) (l : nat) {measure h c}: option closure :=
   match c with
-    | (ξ[env]t)%C =>
+    | ξ [r] t =>
       match t with
         | #n =>
-          match nth (^ 0)%C env n with
-            | ((ξ[_]_)%C | (#_)%C) as c' => clos_cbn c' l
-            | (^0)%C => Some (#(n - (length env - l)))%C
-            | _       => None (* imp. case *)
+          match nth ⌊0⌋ r n with
+            | (ξ [_] _ | ^_) as c' => clos_cbn c' l
+            | ⌊0⌋                  => Some ⌊(n - (length r - l))⌋
+            | _                    => None (* imp. case *)
           end
-        | λ[b] => Some (λ[(ξ[#(l + 1)::env]b)%C])%C
-        | m·n  => Some ((ξ[env]m)%C·(ξ[env]n)%C)%C
+        | λ [b] => Some (λλ [ξ [^(l + 1) :: r] b])
+        | m · n => Some ((ξ [r] m) ○ (ξ [r] n))
       end
-    | (#n)%C    => Some (# (l - n))%C
-    | (λ[cb])%C => None
-    | (cm·cn)%C => match clos_cbn cm l with
+    | ^n      => Some ⌊l - n⌋
+    | λλ [cb] => None
+    | cm ○ cn => match clos_cbn cm l with
                    | Some cm' =>
                      match cm' with
-                       | (λ[(ξ[#n::env']t)%C])%C =>
-                         Some ((ξ[cn::env']t)%C)
-                       | (λ[cb])%C => None (* imp. case *)
-                       | _         => Some (cm'·cn)%C
+                       | λλ [ξ [^_ :: r'] t] => Some (ξ [cn :: r'] t)
+                       | λλ [cb]             => None (* imp. case *)
+                       | _                   => Some (cm' ○ cn)
                      end
                    | None => None
                  end
-    | (^n)%C      => None
+    | ⌊n⌋ => None
   end.
 Proof.
-admit. admit. admit.
+  (* Subgoal 1 *)
+  intros.
+  rewrite (hE (ξ [r] #n)).
+  have hB : n < size r. admit.
+  (* rewrite -> (nth_map n (fun c0 => (h c0).+1)). *)
+  (* I dont see how to apply nth_map *)
+  admit. admit. admit.
 Qed.
 
 (* -------------------------------------------------------------------- *)
 (* Small-step closure normal order *)
 (* Function clos_nor (c : closure) (l : nat) {measure h c} : option closure := *)
 (*   match c with *)
-(*     | (ξ[env]t)%C => *)
+(*     | ξ [r] t => *)
 (*       match t with *)
-(*         | #n   => match nth (^ 0)%C env n with *)
-(*                     | ((ξ[_]_)%C | (#_)%C) as c' => clos_nor c' l *)
-(*                     | (^0)%C => Some (#(n - (length env - l)))%C *)
-(*                     | _      => None (* imp. case *) *)
+(*         | #n    => match nth ⌊0⌋ r n with *)
+(*                      | (ξ [_] _ | ^_) as c' => clos_nor c' l *)
+(*                      | ⌊0⌋                  => Some ⌊n - (length r - l)⌋ *)
+(*                      | _                    => None (* imp. case *) *)
 (*                   end *)
-(*         | λ[b] => Some (λ[(ξ[#(l + 1)::env]b)%C])%C *)
-(*         | m·n  => Some ((ξ[env]m)%C·(ξ[env]n)%C)%C *)
+(*         | λ [b] => Some (λλ [ξ [^(l + 1) :: r] b]) *)
+(*         | m · n => Some (ξ [r] m ○ ξ [r] n) *)
 (*       end *)
-(*     | (# n)%C     => Some (#(l - n))%C *)
-(*     | (λ [cb])%C  => let ob := clos_nor cb (l + 1) *)
-(*                      in match ob with *)
-(*                           | (Some cb') => Some (λ[cb'])%C *)
-(*                           | None       => None *)
-(*                         end *)
-(*     | (cm · cn)%C => match clos_cbn cm l with *)
-(*                        | Some cm' => *)
-(*                          match cm' with *)
-(*                            | (λ[(ξ[(#l')%C::env']t)%C])%C => *)
-(*                              Some (ξ[cn::env']t)%C *)
-(*                            | _ => *)
-(*                              let om := clos_nor cm' l *)
-(*                              in match om with *)
-(*                                   | Some cm'' => *)
-(*                                     let on := clos_nor cn l *)
-(*                                     in match on with *)
-(*                                          | Some cn' => Some (cm''·cn')%C *)
-(*                                          | None     => None *)
-(*                                        end *)
-(*                                   | None => None *)
-(*                                 end *)
-(*                          end *)
-(*                        | None => None *)
+(*     | ^n      => Some ⌊l - n⌋ *)
+(*     | λλ [cb] => let ob := clos_nor cb (l + 1) *)
+(*                  in match ob with *)
+(*                       | (Some cb') => Some (λλ [cb']) *)
+(*                       | None       => None *)
+(*                     end *)
+(*     | cm ○ cn => match clos_cbn cm l with *)
+(*                    | Some cm' => *)
+(*                      match cm' with *)
+(*                        | λλ [ξ [^_ :: r'] t] => Some (ξ [cn :: r'] t) *)
+(*                        | _ => *)
+(*                          let om := clos_nor cm' l *)
+(*                          in match om with *)
+(*                               | Some cm'' => *)
+(*                                 let on := clos_nor cn l *)
+(*                                 in match on with *)
+(*                                      | Some cn' => Some (cm'' ○ cn') *)
+(*                                      | None     => None *)
+(*                                    end *)
+(*                               | None => None *)
+(*                             end *)
 (*                      end *)
-(*     | (^n)%C => None *)
+(*                    | None => None *)
+(*                  end *)
+(*     | ⌊_⌋ => None *)
 (*   end. *)
 (* Proof. *)
 
@@ -657,15 +661,15 @@ Qed.
 (* -------------------------------------------------------------------- *)
 Fixpoint iscneu_r (c : closure) : bool :=
   match c with
-    | (^_)%C    => true
-    | (c1·c2)%C => (iscneu_r c1)
-    | _         => false
+    | ⌊_⌋     => true
+    | c1 ○ c2 => (iscneu_r c1)
+    | _       => false
   end.
 
 Fixpoint iscwhnf_r (c : closure) : bool :=
   match c with
-    | (λ[cb])%C => true
-    | _         => iscneu_r c
+    | λλ [cb] => true
+    | _       => iscneu_r c
   end.
 
 Definition iscneu := fun c => iscneu_r  c.
@@ -674,17 +678,17 @@ Definition iscwhnf := fun c => iscwhnf_r c.
 
 Fixpoint iscnf_r (b : bool)(c : closure) : bool :=
   match c with
-    | (λ[cb])%C => b && iscnf_r true cb
-    | (^_)%C    => true
-    | (c1·c2)%C => iscnf_r false c1 && iscnf_r true c2
-    | _         => false
+    | λλ [cb] => b && iscnf_r true cb
+    | ⌊_⌋     => true
+    | c1 ○ c2 => iscnf_r false c1 && iscnf_r true c2
+    | _       => false
   end.
 
 Fixpoint iscneunf_r (c : closure) : bool :=
   match c with
-    | (^_)%C    => true
-    | (c1·c2)%C => (iscneunf_r c1) && (iscnf_r true c2)
-    | _         => false
+    | ⌊_⌋     => true
+    | c1 ○ c2 => (iscneunf_r c1) && (iscnf_r true c2)
+    | _       => false
   end.
 
 Definition iscneunf := fun c => iscneunf_r c.
@@ -702,22 +706,22 @@ Definition iscnf := fun c => iscnf_r true c.
 (* Call-by-name ephemeral expansion *)
 Function cbn_eph_exp (c : closure) (l : nat) {measure h c} : closure :=
   match c with
-    | (ξ[env]t)%C =>
+    | ξ [r] t =>
       match t with
         | #n =>
-          match nth (^ 0)%C env n with
-            | ((ξ[_]_)%C | (#_)%C) as c' => cbn_eph_exp c' l
-            | (^0)%C => (#(n - (length env - l)))%C
-            | _      => (^0)%C
+          match nth ⌊0⌋ r n with
+            | (ξ [_] _ | ^_) as c' => cbn_eph_exp c' l
+            | ⌊0⌋                  => ⌊n - (length r - l)⌋
+            | _                    => ⌊0⌋ (* imp. case *)
           end
-        | λ[b] => c
-        | m·n  => cbn_eph_exp ((ξ[env]m)%C·(ξ[env]n)%C)%C l
+        | λ [b] => c
+        | m · n => cbn_eph_exp (ξ [r] m ○ ξ [r] n) l
       end
-    | (#n)%C    => (#(n -l))%C
-    | (^n)%C    => c
-    | (λ[cb])%C => c
-    | (cm·cn)%C => let cm' := cbn_eph_exp cm l
-                   in (cm'·cn)%C
+    | ^n      => ⌊n - l⌋
+    | ⌊_⌋     => c
+    | λλ [cb] => c
+    | cm ○ cn => let cm' := cbn_eph_exp cm l
+                 in cm' ○ cn
   end.
 Proof.
 admit. admit. admit. admit.
@@ -727,22 +731,22 @@ Qed.
 (* Normal order ephemeral expansion *)
 Function nor_eph_exp (c : closure) (l : nat) {measure h c} : closure :=
   match c with
-    | (ξ[env]t)%C =>
+    | ξ [r] t =>
       match t with
         | #n =>
-          match nth (^ 0)%C env n with
-            | ((ξ[_]_)%C | (#_)%C) as c' => nor_eph_exp c' l
-            | (^0)%C => (#(n - (length env - l)))%C
-            | _      => (^0)%C
+          match nth ⌊0⌋ r n with
+            | (ξ [_] _ | ^_) as c' => nor_eph_exp c' l
+            | ⌊0⌋                  => ⌊n - (length r - l)⌋
+            | _                    => ⌊0⌋ (* imp. case *)
           end
-        | λ[b] => c
-        | m·n  => nor_eph_exp ((ξ[env]m)%C·(ξ[env]n)%C)%C l
+        | λ [b] => c
+        | m · n => nor_eph_exp (ξ [r] m ○ ξ [r] n) l
       end
-    | (#n)%C    => (#(n -l))%C
-    | (^n)%C    => c
-    | (λ[cb])%C => c
-    | (cm·cn)%C => let cm' := cbn_eph_exp cm l
-                   in (cm'·cn)%C
+    | ^n      => ⌊n - l⌋
+    | ⌊n⌋     => c
+    | λλ [cb] => c
+    | cm ○ cn => let cm' := cbn_eph_exp cm l
+                 in cm' ○ cn
   end.
 Proof.
 admit. admit. admit.
@@ -759,6 +763,7 @@ Fixpoint iscexp_r (b : bool)(c : closure) : bool :=
   end.
 
 Definition iscexp := fun c => iscexp_r true c.
+
 
 
 (*
