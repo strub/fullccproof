@@ -1,4 +1,3 @@
-
 (* -------------------------------------------------------------------- *)
 Require Import ssreflect eqtype ssrbool ssrnat ssrfun seq Recdef.
 
@@ -9,9 +8,15 @@ Unset Printing Implicit Defensive.
 (* -------------------------------------------------------------------- *)
 Reserved Notation "# x"         (at level 8, format "# x").
 Reserved Notation "^ x"         (at level 8, format "^ x").
-Reserved Notation "t · u"       (at level 16, left associativity, format "t  ·  u").
-Reserved Notation "'λ' [ t ]"   (at level 8, t at level 15, right associativity, format "'λ'  [ t ]").
-Reserved Notation "'ξ' [ c ] t" (at level 8, c, t at level 15, right associativity, format "'ξ' [ c ]  t").
+Reserved Notation "t · u"       (at level 40, left associativity, format "t  ·  u").
+Reserved Notation "'λ' [ t ]"   (at level 30, t at level 15, right associativity, format "'λ'  [ t ]").
+Reserved Notation "'ξ' [ c ] t" (at level 30, c, t at level 15, right associativity, format "'ξ'  [ c ]  t").
+
+Reserved Notation "^ x"         (at level 8, format "^ x").
+Reserved Notation "⌊ x ⌋"       (at level 7, format "⌊ x ⌋").
+Reserved Notation "t ○ u"       (at level 40, left associativity, format "t  ○  u").
+Reserved Notation "'λλ' [ t ]"  (at level 30, t at level 15, right associativity, format "'λλ'  [ t ]").
+Reserved Notation "'ξ' [ c ] t" (at level 30, c, t at level 15, right associativity, format "'ξ'  [ c ]  t").
 
 Inductive term : Type :=
 | Var of nat
@@ -139,13 +144,22 @@ Notation "↑ [ k ] t" := (↑[k,1] t).
 Notation "↑ t"       := (↑[0] t).
 
 (* -------------------------------------------------------------------- *)
+Lemma liftn0 t k: ↑[k,0] t = t.
+Proof.
+  elim: t k => /= [n|t IHt u IHu|t IH] k.
+  + by rewrite addn0; case: leqP.
+  + by rewrite !(IHt, IHu).
+  + by rewrite IH.
+Qed.
+
+(* -------------------------------------------------------------------- *)
 Reserved Notation "t [! x ← u ]" (at level 8, x, u at level 15, format "t [! x  ←  u ]").
 
 Fixpoint subst k w t :=
   match t with
   | #x =>
            if x <  k then t
-      else if x == k then ↑[0,k] t
+      else if x == k then ↑[0,k] w
       else #x.-1
 
   | t1 · t2 => t1[!k ← w] · t2[!k ← w]
@@ -154,7 +168,7 @@ Fixpoint subst k w t :=
     where "t [! x ← u ]" := (subst x u t).
 
 (* -------------------------------------------------------------------- *)
-Reserved Notation "t '⇓_[bn]' u" (at level 30, format "t  '⇓_[bn]'  u").
+Reserved Notation "t '⇓_[bn]' u" (at level 50, format "t  '⇓_[bn]'  u").
 
 Inductive bn : term -> term -> Prop :=
 | BnVar : forall x, #x ⇓_[bn] #x
@@ -182,81 +196,61 @@ Implicit Types cs : seq closure.
 
 Notation "'ξ' [ c ] t" := (CClo t c)   : closure.
 Notation "^ x"         := (CLvl x)     : closure.
-Notation "# x"         := (CGrd x)     : closure.
-Notation "c1 · c2"     := (CApp c1 c2) : closure.
-Notation "'λ' [ c ]"   := (CLam c)     : closure.
-
-(******* ALVARO *******)
-(* I would keep Ind as the constructor for terms and Lev (or CLev if you
-prefer) as the one for closures. They both represent variables, but in
-different manners. This difference would be better conceived if we swap the #
-and ^ notation in closures (notice that ground indices are de Bruijn indices,
-but de Bruijn levels are something else).
-
-Besides, to avoid using the %C thing (I don't actually know the precise
-semantics of %C in Coq, I just took it from your code) be could follow this
-convention:
-
-  Term constructors:     # λ ·
-  Closure constructors : ξ (proper closures)
-                         λλ (closure abstraction)
-                         ∘ (closure application)
-                         ^ (levels)
-                         ⌊ ⌋ (gorund indices)
-
-What do you think? *)
+Notation "⌊ x ⌋"       := (CGrd x)     : closure.
+Notation "c1 ○ c2"     := (CApp c1 c2) : closure.
+Notation "'λλ' [ c ]"  := (CLam c)     : closure.
 
 Bind Scope closure with closure.
 Delimit Scope closure with C.
 
-Section ClosureEq.
-  Local Open Scope closure.
+Local Open Scope closure.
 
-  Fixpoint closure_eqb (c1 c2 : closure) {struct c1} :=
-    match c1, c2 with
-    | ^n     , ^m        => n == m
-    | #n     , #m        => n == m
-    | c1 · c2, c'1 · c'2 => [&& closure_eqb c1 c'1 & closure_eqb c2 c'2]
-    | λ [c]  , λ [c']    => closure_eqb c c'
-    | ξ [c] t, ξ [c'] t' =>
-        let fix cseq cs1 cs2 :=
-            match cs1, cs2 with
-            | [::]     , [::]      => true
-            | c1 :: cs1, c2 :: cs2 => [&& closure_eqb c1 c2 & cseq cs1 cs2]
-            | _        , _         => false
-            end
-        in
-          [&& cseq c c' & t == t']
-    | _      , _         => false
-    end.
+Fixpoint closure_eqb (c1 c2 : closure) {struct c1} :=
+  match c1, c2 with
+  | ^n     , ^m        => n == m
+  | ⌊n⌋    , ⌊m⌋       => n == m
+  | c1 ○ c2, c'1 ○ c'2 => [&& closure_eqb c1 c'1 & closure_eqb c2 c'2]
+  | λλ [c] , λλ [c']   => closure_eqb c c'
+  | ξ [c] t, ξ [c'] t' =>
+      let fix cseq cs1 cs2 :=
+          match cs1, cs2 with
+          | [::]     , [::]      => true
+          | c1 :: cs1, c2 :: cs2 => [&& closure_eqb c1 c2 & cseq cs1 cs2]
+          | _        , _         => false
+          end
+      in
+        [&& cseq c c' & t == t']
+  | _      , _         => false
+  end.
 
-  Lemma closure_eqP c1 c2: reflect (c1 = c2) (closure_eqb c1 c2).
-  Proof.
-    apply: (iffP idP).
-    + move: c1 c2; fix 1; move: closure_eqP => IH.
-      case=> [t cs|n|n|c1 c2|c] [t' cs'|n'|n'|c1' c2'|c'] //=;
-        try solve [ by move/eqP=> ->
-                  | by do! (try (try case/andP; move/IH=> ->))].
-      * case/andP=> h /eqP->; elim: cs cs' h => [|c cs IHcs] [|c' cs'] //=.
-        by case/andP=> /IH-> /IHcs; case=> ->.
-    + move: c1 c2; fix 1; move: closure_eqP => IH.
-      case=> [t cs|n|n|c1 c2|c] [t' cs'|n'|n'|c1' c2'|c'] //=;
-        try by (case; do? (try move/IH)=> ->//).
-      * case=> <- eq_cs; apply/andP; split=> //.
-        elim: cs cs' eq_cs => [|c cs IHcs] [|c' cs'] //=.
-        by case=> /IH-> /IHcs->.
-  Qed.
+Lemma closure_eqP c1 c2: reflect (c1 = c2) (closure_eqb c1 c2).
+Proof.
+  apply: (iffP idP).
+  + move: c1 c2; fix 1; move: closure_eqP => IH.
+    case=> [t cs|n|n|c1 c2|c] [t' cs'|n'|n'|c1' c2'|c'] //=;
+      try solve [ by move/eqP=> ->
+                | by do! (try (try case/andP; move/IH=> ->))].
+    * case/andP=> h /eqP->; elim: cs cs' h => [|c cs IHcs] [|c' cs'] //=.
+      by case/andP=> /IH-> /IHcs; case=> ->.
+  + move: c1 c2; fix 1; move: closure_eqP => IH.
+    case=> [t cs|n|n|c1 c2|c] [t' cs'|n'|n'|c1' c2'|c'] //=;
+      try by (case; do? (try move/IH)=> ->//).
+    * case=> <- eq_cs; apply/andP; split=> //.
+      elim: cs cs' eq_cs => [|c cs IHcs] [|c' cs'] //=.
+      by case=> /IH-> /IHcs->.
+Qed.
 
+Section ClosureInd.
   Definition closure_eqMixin := EqMixin closure_eqP.
   Canonical closure_eqType := EqType closure closure_eqMixin.
 
   Variable P : closure -> Prop.
 
   Hypothesis Hclo : forall t cs, (forall c, c \in cs -> P c) -> P (ξ [cs] t).
-  Hypothesis Hgrd : forall n, P ^n.
-  Hypothesis Hvar : forall n, P #n.
-  Hypothesis Happ : forall c1 c2, P c1 -> P c2 -> P (c1 · c2).
-  Hypothesis Hlam : forall c, P c -> P (λ [c]).
+  Hypothesis Hlvl : forall n, P ^n.
+  Hypothesis Hgrd : forall n, P ⌊n⌋.
+  Hypothesis Happ : forall c1 c2, P c1 -> P c2 -> P (c1 ○ c2).
+  Hypothesis Hlam : forall c, P c -> P (λλ [c]).
 
   Lemma clind c : P c.
   Proof.
@@ -266,34 +260,34 @@ Section ClosureEq.
       * rewrite in_cons; case/orP => [/eqP->|].
         by apply: clind. by move/IH => {clind}.
     + by apply: Hgrd.
-    + by apply: Hvar.
+    + by apply: Hlvl.
     + by apply: Happ; apply: clind.
     + by apply: Hlam; apply: clind.
   Qed.
-End ClosureEq.
+End ClosureInd.
 
 Fixpoint is_ephemeral c :=
   match c with
-  | (#(_)   )%C => true
-  | (λ [c]  )%C => is_ephemeral c
-  | (c1 · c2)%C => [&& is_ephemeral c1 & is_ephemeral c2]
-  | _           => false
+  | ⌊_⌋     => true
+  | λλ [c]  => is_ephemeral c
+  | c1 ○ c2 => [&& is_ephemeral c1 & is_ephemeral c2]
+  | _       => false
   end.
 
 (* -------------------------------------------------------------------- *)
 Fixpoint closure_of_term (t : term) : closure :=
   match t with
-  | #n      => (#n)%C
-  | λ [t]   => (λ [closure_of_term t])%C
-  | t1 · t2 => (closure_of_term t1 · closure_of_term t2)%C
+  | #n      => ⌊n⌋
+  | λ [t]   => λλ [closure_of_term t]
+  | t1 · t2 => closure_of_term t1 ○ closure_of_term t2
   end.
 
 Fixpoint term_of_closure (w : term) (c : closure) : term :=
   match c with
-  | (#n     )%C => #n
-  | (λ [c]  )%C => λ [term_of_closure w c]
-  | (c1 · c2)%C => term_of_closure w c1 · term_of_closure w c2
-  | _           => w
+  | ⌊n⌋     => #n
+  | λλ [c]  => λ [term_of_closure w c]
+  | c1 ○ c2 => term_of_closure w c1 · term_of_closure w c2
+  | _       => w
   end.
 
 (* -------------------------------------------------------------------- *)
@@ -342,19 +336,19 @@ Qed.
 Module HeightI.
   Fixpoint h (c : closure) : nat :=
     match c with
-    | (#(_)    )%C => 0
-    | (^(_)    )%C => 0
-    | (λ [c]   )%C => (h c).+1
-    | (c1 · c2 )%C => maxn (h c1) (h c2)
-    | (ξ [cs] t)%C =>
+    | ⌊_⌋      => 0
+    | ^(_)     => 0
+    | λλ [c]   => (h c).+1
+    | c1 ○ c2  => (maxn (h c1) (h c2)).+1
+    | ξ [cs] t =>
         let fix ht t hs k {struct t} :=
           match t with
-          | #i      => if i < k then 0 else nth 0 hs (i-k)
-          | λ [t]   => ht t hs k.+1
-          | t1 · t2 => maxn (ht t1 hs k) (ht t2 hs k)
+          | #i      => if i < k then 1 else nth 0 hs (i-k)
+          | λ [t]   => (ht t hs k.+1).+1
+          | t1 · t2 => (maxn (ht t1 hs k) (ht t2 hs k)).+1
           end
         in
-          ht t [seq h c | c <- cs] 0
+          ht t [seq (h c).+1 | c <- cs] 0
     end.
 End HeightI.
 
@@ -377,76 +371,63 @@ Canonical h_unlock := Unlockable Height.hE.
 (* -------------------------------------------------------------------- *)
 Fixpoint ht t hs k :=
   match t with
-  | #i      => if i < k then 0 else nth 0 hs (i-k)
-  | λ [t]   => ht t hs k.+1
-  | t1 · t2 => maxn (ht t1 hs k) (ht t2 hs k)
+  | #i      => if i < k then 1 else (nth 0 hs (i-k))
+  | λ [t]   => (ht t hs k.+1).+1
+  | t1 · t2 => (maxn (ht t1 hs k) (ht t2 hs k)).+1
   end.
 
-
-(******* ALVARO *******)
-(* I realised that the h function has to be ammended:
-
-            h(#n[ρ]) = { 1 + h(nth n ρ)  if n < |ρ|
-                       { 0               if n >= |ρ|
-         h((λ B)[ρ]) = h(λλ (B[^0 : ρ]))
-              h(M N) = h((M[ρ])∘(N[ρ]))
-               h(^n) = 0
-              h(⌊n⌋) = 0
-             h(λλ C) = 1 + h(C)
-            h(C1∘C2) = 1 + max{h(C1),h(C2)}
-
-The height has to be incremented every time that we retrieve a binding form
-the environment, and with every closure constructor. Term abstraction and
-application can be just lifted to their closure analogous. I don't want to
-change it myself for if I break your code somewhere else. *)
-
-Lemma hE (cl : closure * nat):
-  h cl.1 = match cl.1 with
-           | (^n              )%C => 0
-           | (#n              )%C => 0
-           | (λ [c]           )%C => (h c).+1
-           | (c1 · c2         )%C => (maxn (h c1) (h c2)).+1
-           | (ξ [cs] #n       )%C => (nth 0 [seq h c | c <- cs] n).+1
-           | (ξ [cs] (λ [t])  )%C => h (ξ [(^cl.2)%C :: cs] t)
-           | (ξ [cs] (t1 · t2))%C => maxn (h (ξ [cs] t1)) (h (ξ [cs] t2))
-           end.
+Lemma hE: forall c,
+  h c = match c with
+        | ^n               => 0
+        | ⌊n⌋              => 0
+        | λλ [c]           => (h c).+1
+        | c1 ○ c2          => (maxn (h c1) (h c2)).+1
+        | ξ [cs] #n        => nth 0 [seq (h c).+1 | c <- cs] n
+        | ξ [cs] (λ [t])   => (h (ξ [^0 :: cs] t)).+1
+        | ξ [cs] (t1 · t2) => (maxn (h (ξ [cs] t1)) (h (ξ [cs] t2))).+1
+        end.
 Proof.
-  have CE cs t: h (ξ [cs] t) = ht t [seq h c | c <- cs] 0.
-    by rewrite unlock.
-  case: cl => [[t cs|n|n|c1 c2|c] l] /=; try by rewrite unlock.
-  case: t => [n|t1 t2|t] /=; try by rewrite unlock /= ?subn0.
-  rewrite !CE /=; have ->: h ^l = 0 by rewrite unlock.
-  rewrite -cat1s; move: [seq _ | _ <- _] => hs.
-  have ->: [:: 0] = nseq 1 0 by []; move: 1%N => n.
-  rewrite -{1}[n]addn0; move: {1 3}0 => m.
-  elim: t n m => [p|t IHt u IHu|t IH] n m /=.
-  + case: (ltnP p m) => h1; first by rewrite ltn_addl.
-    rewrite addnC subnDA nth_cat size_nseq.
-    have <-: (p - m < n) = (p < m + n).
-      by rewrite /leq -subSn // -subnDA.
-    by move: (p - m) => {p m h1} p; rewrite nth_nseq; case: ltnP.
-  + by rewrite IHt IHu.
-  + by rewrite -addnS IH.
+  have CE cs t: h (ξ [cs] t) = ht t [seq (h c).+1 | c <- cs] 0.
+    by rewrite unlock /=.
+  case=> [|n|n|c1 c2|c]; try by rewrite unlock.
+  have htE t hs k: ht t hs k = ht t ((nseq k 1) ++ hs) 0.
+    elim: t hs k => [n|t1 IH1 t2 IH2|t IH] hs k //=.
+    + rewrite nth_cat subn0 size_nseq; case: ltnP=> //.
+      by rewrite nth_nseq => ->.
+    + by rewrite IH1 IH2.
+    + by rewrite IH [X in _=X.+1]IH.
+  have nseqhE i cs:
+      [seq (h c).+1 | c <- (nseq i ^0) ++ cs]
+    = (nseq i 1 ++ [seq (h c).+1 | c <- cs]).
+    by rewrite map_cat map_nseq unlock.
+  move=> t cs; rewrite CE; have: cs = (nseq 0 ^0) ++ cs by [].
+  set i := {1}0; move=> csE; rewrite -{1}/i {-1}csE => {csE}.
+  elim: t i => [n|t1 IH1 t2 IH2|t IH] i //=.
+  + rewrite map_cat nth_cat size_map size_nseq; case: ltnP=> //.
+    move=> lt_ni; rewrite (nth_map ^0) ?size_nseq //.
+    by rewrite nth_nseq lt_ni unlock.
+  + by rewrite !CE; congr (maxn _ _).+1; rewrite htE nseqhE.
+  + by rewrite CE htE -nseqhE.
 Qed.
 
 (* -------------------------------------------------------------------- *)
 Module SCI.
   Fixpoint sc (c : closure) (l : nat) : closure :=
     match c with
-    | (#(_)    )%C => c
-    | (^(n)    )%C => (#(l-n))%C
-    | (λ [c]   )%C => (λ [sc c l.+1])%C
-    | (c1 · c2 )%C => (sc c1 l · sc c2 l)%C
-    | (ξ [cs] t)%C =>
+    | ⌊_⌋      => c
+    | ^n       => ⌊l-n⌋
+    | λλ [c]   => λλ [sc c l.+1]
+    | c1 ○ c2  => sc c1 l ○ sc c2 l
+    | ξ [cs] t =>
         let fix sct t l ls : closure :=
           match t with
           | #n      => if   n < size ls
-                       then (#(l - nth 0 ls n))%C
+                       then ⌊l - nth 0 ls n⌋
                        else if   n < size ls + size cs
-                            then nth (#0)%C [seq sc c l | c <- cs] (n - size ls)
-                            else (#(n - ((size ls + size cs) - l)))%C
-          | λ [t]   => (λ [sct t l.+1 (l.+1 :: ls)])%C
-          | t1 · t2 => ((sct t1 l ls) · (sct t2 l ls))%C
+                            then nth ⌊0⌋ [seq sc c l | c <- cs] (n - size ls)
+                            else ⌊n - ((size ls + size cs) - l)⌋
+          | λ [t]   => λλ [sct t l.+1 (l.+1 :: ls)]
+          | t1 · t2 => (sct t1 l ls ○ sct t2 l ls)
           end
         in
           sct t l [::]
@@ -473,10 +454,10 @@ Canonical sc_unlock := Unlockable SC.scE.
 Fixpoint sct cs t l : closure :=
   match t with
   | #n      => if   n < size cs
-               then sc (nth (#0)%C cs n) l
-               else (#(n - (size cs - l)))%C
-  | λ [t]   => (λ [sct (^l.+1 :: cs) t l.+1])%C
-  | t1 · t2 => ((sct cs t1 l) · (sct cs t2 l))%C
+               then sc (nth ⌊0⌋ cs n) l
+               else ⌊n - (size cs - l)⌋
+  | λ [t]   => λλ [sct (^l.+1 :: cs) t l.+1]
+  | t1 · t2 => sct cs t1 l ○ sct cs t2 l
   end.
 
 (* -------------------------------------------------------------------- *)
@@ -496,7 +477,7 @@ Section SecE.
         by rewrite -addnS addnC -addnBA.
       move=> h; case: ltnP=> h'; rewrite nth_cat !size_map.
       + by rewrite h' (nth_map 0) // unlock.
-      + rewrite ltnNge h' /= (nth_map #0) 1?unlock //.
+      + rewrite ltnNge h' /= (nth_map ⌊0⌋) 1?unlock //.
         by rewrite -(ltn_add2l (size ls)) subnKC.
     + by rewrite !(IH1 _ ls, IH2 _ ls).
     + by rewrite (IH l.+1 (l.+1::ls)) //= e.
@@ -504,21 +485,21 @@ Section SecE.
 
   Lemma scE: forall c l,
     sc c l = match c return closure with
-             | ^n               => #(l-n)
-             | #n               => #n
-             | λ [c]            => λ [sc c l.+1]
-             | c1 · c2          => (sc c1 l) · (sc c2 l)
+             | ^n               => ⌊l-n⌋
+             | ⌊n⌋              => ⌊n⌋
+             | λλ [c]           => λλ [sc c l.+1]
+             | c1 ○ c2          => (sc c1 l) ○ (sc c2 l)
              | ξ [cs] #n        => if   n < size cs
-                                   then sc (nth (#0)%C cs n) l
-                                   else #(n - (size cs - l))
-             | ξ [cs] (λ [t])   => sc (λ [ξ [^(l.+1) :: cs] t]) l
-             | ξ [cs] (t1 · t2) => sc (ξ [cs] t1 · ξ [cs] t2) l
+                                   then sc (nth ⌊0⌋ cs n) l
+                                   else ⌊n - (size cs - l)⌋
+             | ξ [cs] (λ [t])   => sc (λλ [ξ [^(l.+1) :: cs] t]) l
+             | ξ [cs] (t1 · t2) => sc (ξ [cs] t1 ○ ξ [cs] t2) l
              end.
   Proof.
     case=> [t c|n|n|c1 c2|c] l; try by rewrite unlock.
     case: t => [n|t1 t2|t]; try by rewrite unlock.
     + by rewrite unlock /= add0n subn0; case:ltnP => h //; apply: nth_map.
-    + have ->: sc (λ [ξ[(^l.+1 :: c)] t]) l = λ [sc (ξ [(^l.+1 :: c)] t) l.+1].
+    + have ->: sc (λλ [ξ[(^l.+1 :: c)] t]) l = λλ [sc (ξ [(^l.+1 :: c)] t) l.+1].
         by rewrite unlock.
       by rewrite !scCE /=.
   Qed.
@@ -541,13 +522,16 @@ Definition σc (c : closure) (l : nat) :=
   @Ephemeral (sc c l) (sc_is_ephemeral c l).
 
 (* -------------------------------------------------------------------- *)
-Coercion term_of_ephemeral : ephemeral >-> term.
+Lemma sc_id_eph: forall c l, is_ephemeral c -> sc c l = c.
+Proof.
+  elim=> [t cs|n|n|c1 IH1 c2 IH2|c IH] l //=; rewrite scE //.
+  + by case/andP=> /IH1-> /IH2->.
+  + by move/IH=> ->.
+Qed.
 
-Lemma L B N ρ ρ' l:
-    σc (ξ [(ξ [ρ] N)%C :: ρ'] B) l
-  = σc (ξ [ρ'] (B[!0 ← σc (ξ [ρ] N) l])) l.
-Proof. Admitted.
-
+(* -------------------------------------------------------------------- *)
+Lemma scK l c:  sc (sc c l) l = sc c l.
+Proof. by rewrite sc_id_eph // sc_is_ephemeral. Qed.
 
 (* -------------------------------------------------------------------- *)
 (* Small-step call-by-name *)
