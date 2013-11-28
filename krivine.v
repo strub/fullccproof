@@ -235,19 +235,65 @@ Proof.
 Qed.
 
 (* -------------------------------------------------------------------- *)
+Reserved Notation "↓ t"           (at level 0, format "↓ t").
+Reserved Notation "↓ [ k ] t"     (at level 0, format "↓ [ k ] t").
+Reserved Notation "↓ [ k , n ] t" (at level 0, format "↓ [ k , n ] t").
+
+Fixpoint lower k n t :=
+  match t with
+  | #x      => if x < k then #(x-n) else #x
+  | t1 · t2 => ↓[k,n] t1 · ↓[k,n] t2
+  | λ [t]   => λ [↓[k.+1,n] t]
+  end
+    where "↓ [ k , n ] t" := (lower k n t).
+
+Notation "↓ [ k ] t" := (↓[k,1] t).
+Notation "↓ t"       := (↓[0] t).
+
+(* -------------------------------------------------------------------- *)
+Lemma lowern0 t k: ↓[k,0] t = t.
+Proof.
+  (* elim: t k => /= [n|t IHt u IHu|t IH] k. *)
+  (* + by rewrite addn0; case: leqP. *)
+  (* + by rewrite !(IHt, IHu). *)
+  (* + by rewrite IH. *)
+  (* ALVARO: I imagine this proof if substituting addn0 by "subn0" *)
+  admit.
+Qed.
+
+
+(* -------------------------------------------------------------------- *)
 Reserved Notation "t [! x ← u ]" (at level 8, x, u at level 15, format "t [! x  ←  u ]").
 
 Fixpoint subst k w t :=
   match t with
-  | #x =>
-           if x <  k then t
-      else if x == k then ↑[0,k] w
-      else #x.-1
-
+  | #x => if x == k then  ↑[0,k] w
+          else #x
   | t1 · t2 => t1[!k ← w] · t2[!k ← w]
   | λ [t]   => λ [t[!k.+1 ← w]]
   end
     where "t [! x ← u ]" := (subst x u t).
+
+(* ALVARO: and now, add a call to ↓ b before performing subst, this is
+
+     b [!0 ← t] sholud now be  (↓ b) [!0 ← t]
+
+   or in general
+
+     t [!n ← t] sholud now be (↓[n, 1] b) [!n ← (↑[0, n] t)]
+*)
+
+(* Fixpoint subst k w t := *)
+(*   match t with *)
+(*   | #x => *)
+(*            if x <  k then t *)
+(*       else if x == k then ↑[0,k] w *)
+(*       else #x.-1 *)
+
+(*   | t1 · t2 => t1[!k ← w] · t2[!k ← w] *)
+(*   | λ [t]   => λ [t[!k.+1 ← w]] *)
+(*   end *)
+(*     where "t [! x ← u ]" := (subst x u t). *)
 
 (* -------------------------------------------------------------------- *)
 Inductive closure : Type :=
@@ -687,10 +733,8 @@ Qed.
 (* -------------------------------------------------------------------- *)
 Lemma lift_clos_n0 c k l: lift_clos k 0 l c = c.
 Proof.
-  (* elim: c k => /= [n|c IHt u IHu|c IH] k. *)
-  (* + by rewrite addn0; case: leqP. *)
-  (* + by rewrite !(IHt, IHu). *)
-  (* + by rewrite IH. *)
+  (* unfold lift_clos. *)
+  (* rewrite unlock. *)
   admit.
 Qed.
 
