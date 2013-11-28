@@ -6,6 +6,10 @@ Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
 (* -------------------------------------------------------------------- *)
+Lemma pairE (T U : Type) (xy : T * U): (xy.1, xy.2) = xy.
+Proof. by case: xy. Qed.
+
+(* -------------------------------------------------------------------- *)
 Reserved Notation "# x"         (at level 8, format "# x").
 Reserved Notation "^ x"         (at level 8, format "^ x").
 Reserved Notation "t · u"       (at level 40, left associativity, format "t  ·  u").
@@ -55,12 +59,11 @@ Definition AppS t := foldl App t.
 
 Notation "t ·! u" := (AppS t u).
 
+Lemma AppS_cons t u us: t ·! (u :: us) = (t · u) ·! us.
+Proof. by []. Qed.
+
 Lemma AppS_rcons t u us: t ·! (rcons us u) = (t ·! us) · u.
 Proof. by rewrite -cats1 /AppS foldl_cat. Qed.
-
-(* -------------------------------------------------------------------- *)
-Definition neutral (t : term) : bool :=
-  if t is λ [_] then true else false.
 
 (* -------------------------------------------------------------------- *)
 Fixpoint curry (t : term) :=
@@ -69,22 +72,71 @@ Fixpoint curry (t : term) :=
   | _       => (t, [::])
   end.
 
+Definition isapp (t : term) := if t is _ · _ then true else false.
+
 Lemma curryE (t : term): (curry t).1 ·! (curry t).2 = t.
 Proof.
   elim: t => //= t IH u _; case: (curry t) IH => a h /= IH.
   by rewrite AppS_rcons IH.
 Qed.
 
+Lemma crNapp (t : term): ~~(isapp (curry t).1).
+Proof.
+  by elim: t => [x|t IHt u _|t IH] => //=; case: (curry t) IHt.
+Qed.
+
+Lemma crcr t us: ~~(isapp t) -> curry (t ·! us) = (t, us).
+Proof.
+  elim/last_ind: us => [|us u IH]; first by case: t.
+  by move=> Napp_t; rewrite AppS_rcons /= IH.
+Qed.
+
+Lemma crK t: curry ((curry t).1 ·! (curry t).2) = curry t.
+Proof. by rewrite crcr ?crNapp //; case: (curry t). Qed.
+
 (* -------------------------------------------------------------------- *)
-Fixpoint iswhnf_r (b : bool) (t : term) : bool :=
-  match t with
-  | λ [t]   => b
-  | #(_)    => true
-  | u1 · u2 => iswhnf_r false u1
+Definition neutral (t : term) : bool :=
+  if t is λ [_] then false else true.
+
+Definition xneutral (t : term) : bool :=
+  neutral (curry t).1.
+
+(* -------------------------------------------------------------------- *)
+Lemma xneutralP (t : term):
+  reflect (exists x ts, t = #x ·! ts) (xneutral t).
+Proof.
+  apply: (iffP idP); last first.
+    by case=> [x] [ts] ->; rewrite /xneutral crcr.
+  rewrite /xneutral -{2}[t]curryE; case h: (curry t).1 => [x|u1 u2|u] //= _.
+  + by exists x; exists (curry t).2.
+  + by move/(congr1 isapp): h; rewrite (negbTE (crNapp _)).
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Definition iswhnf (t : term) : bool :=
+  match curry t with
+  | (#(_) , _   ) => true
+  | (λ [_], [::]) => true
+  | (_    , _   ) => false
   end.
 
-Definition iswhnf := fun t => iswhnf_r true t.
+(* -------------------------------------------------------------------- *)
+Inductive IsWhnf : term -> Prop :=
+| IsWhnfLam : forall t, IsWhnf (λ [t])
+| IsWhnfVar : forall x ts, IsWhnf (#x ·! ts).
 
+(* -------------------------------------------------------------------- *)
+Lemma iswhnfP (t : term): reflect (IsWhnf t) (iswhnf t).
+Proof.
+  apply: (iffP idP).
+  * rewrite /iswhnf; case h: (curry t) => [ht a].
+    rewrite -[t]curryE; case: ht h => [x|u1 u2|u] -> //=.
+    + by move=> _; apply: IsWhnfVar.
+    + by case: a => [/=|v vs //] _; constructor.
+  * by elim=> //= x ts; rewrite /iswhnf crcr.
+Qed.
+
+(* -------------------------------------------------------------------- *)
 Fixpoint isnf_r (b : bool) (t : term) : bool :=
   match t with
   | λ [t]   => b && (isnf_r true t)
@@ -95,28 +147,58 @@ Fixpoint isnf_r (b : bool) (t : term) : bool :=
 Definition isnf := fun t => isnf_r true t.
 
 (* -------------------------------------------------------------------- *)
-Inductive IsWhnf : term -> Prop :=
-| IsWhnfLam : forall t, IsWhnf (λ [t])
-| IsWhnfVar : forall x ts, IsWhnf (#x ·! ts).
+Inductive IsNf : term -> Prop :=
+| IsNfLam : forall t, IsNf t -> IsNf (λ [t])
+| IsNfVar : forall x ts, (forall t, t \in ts -> IsNf t) -> IsNf (#x ·! ts).
 
-Lemma iswhnfP: forall t, reflect (IsWhnf t) (iswhnf t).
+(* -------------------------------------------------------------------- *)
+Derive Inversion IsNf_appI with
+  (forall t u, IsNf (t · u)) Sort Prop.
+
+Derive Inversion IsNf_appI_r with
+  (forall t, IsNf (λ [t])) Sort Prop.
+
+Lemma IsNf_lamI t (P : term -> Prop):
+     (IsNf (λ [t]) -> forall u, IsNf t -> u = t -> P t)
+  -> IsNf (λ [t]) -> P t.
 Proof.
-  have hF t: reflect (exists n ts, t = #n ·! ts) (iswhnf_r false t).
-  + elim: t => [x|t IHt u IHu|t IHt] => /=; try constructor.
-    * by exists x; exists [::].
-    * apply: (iffP IHt).
-      - case=> x [ts] ->; exists x; exists (rcons ts u).
-        by rewrite -AppS_rcons.
-      - case=> x [ts]; elim/last_ind: ts => [//|ts u' _].
-        by rewrite AppS_rcons; case=> -> _; exists x; exists ts.
-    * by case=> x [us]; elim/last_ind: us => [//|us u _]; rewrite AppS_rcons.
-  have hW: forall t, iswhnf_r false t -> iswhnf_r true t by elim.
-  move=> t; apply: (iffP idP); rewrite /iswhnf.
-  + elim: t true => [x|t IHt u IHu|t IHt] b => //=.
-    * by move=> _; apply: (IsWhnfVar _ [::]).
-    * by move/hF => [x] [ts] ->; rewrite -AppS_rcons; apply: IsWhnfVar.
-    * move=> _; apply IsWhnfLam.
-  + by elim => //= x ts; apply/hW/hF; eauto.
+  move=> h; inversion 1 using IsNf_appI_r; first exact: h.
+  move=> _ x ts _; elim/last_ind: ts => [|u ts _] //.
+  by rewrite AppS_rcons.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma isnfP: forall t, reflect (IsNf t) (isnf t).
+Proof.                          (* FIXME: refactor using `curry' *)
+  pose IsNfI t := exists n ts, (forall u, u \in ts -> IsNf u) /\ t = #n ·! ts.
+
+  have h t b: reflect (if b then IsNf t else IsNfI t) (isnf_r b t).
+  + elim: t b => [x|t IHt u IHu|t IHt] b /=; try constructor.
+    * by case: b; [apply (@IsNfVar _ [::]) | exists x; exists [::]].
+    * case: b IHt IHu => /(_ false) IHt /(_ true) IHu; apply: (iffP idP).
+      - case/andP=> /IHt [x [ts [NFts ->]]] /IHu NFu.
+        rewrite -AppS_rcons; apply: (@IsNfVar x (rcons ts u)).
+        by move=> v; rewrite mem_rcons in_cons => /orP [/eqP->|/NFts].
+      - inversion 1 using IsNf_appI=> _ x; elim/last_ind => [//|ts v _].
+        move=> NFts; rewrite AppS_rcons=> [[tsE vE]]; apply/andP; split.
+        + apply/IHt; rewrite -tsE; exists x; exists ts; split=> // w w_in_ts.
+          by apply: NFts; rewrite mem_rcons in_cons w_in_ts orbT.
+        + by apply/IHu; apply NFts; rewrite mem_rcons vE in_cons eqxx.
+      - case/andP => /IHt [x [ts [NFts ->]]] /IHu NFu.
+        exists x; exists (rcons ts u); rewrite -AppS_rcons; split=> //.
+        by move=> v; rewrite mem_rcons in_cons => /orP [/eqP->|/NFts].
+      - case=> [x] []; elim/last_ind => [[//]|ts v _] [NFts].
+        rewrite AppS_rcons=> [[tsE uE]]; apply/andP; split.
+        + apply/IHt; exists x; exists ts; rewrite tsE; split=> // w w_in_ts.
+          by apply: NFts; rewrite mem_rcons in_cons w_in_ts orbT.
+        + by apply/IHu; apply: NFts; rewrite mem_rcons in_cons uE eqxx.
+    * case: b IHt => /=; last first.
+        constructor=> [[x] []]; elim/last_ind=> [|v ts _] [_] //.
+        by rewrite AppS_rcons.
+      move/(_ true)=> IH; apply: (iffP idP).
+      - by move/IH=> NFt; constructor.
+      - by inversion 1 using IsNf_lamI => _ _ NFt _; apply/IH.
+  by move=> t; move: (h t true).
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -166,22 +248,6 @@ Fixpoint subst k w t :=
   | λ [t]   => λ [t[!k.+1 ← w]]
   end
     where "t [! x ← u ]" := (subst x u t).
-
-(* -------------------------------------------------------------------- *)
-Reserved Notation "t '⇓_[bn]' u" (at level 50, format "t  '⇓_[bn]'  u").
-
-Inductive bn : term -> term -> Prop :=
-| BnVar : forall x, #x ⇓_[bn] #x
-
-| BnLam : forall t, λ [t] ⇓_[bn] λ [t]
-
-| BnRed : forall t t' u v w,
-    t' = λ [u] -> t ⇓_[bn] t' -> u[!0 ← v] ⇓_[bn] w -> t · v ⇓_[bn] w
-
-| BnNeu : forall t t' u,
-    ~~(neutral t) -> t ⇓_[bn] t' -> t · u ⇓_[bn] t' · u
-
-  where "t '⇓_[bn]' u" := (bn t u).
 
 (* -------------------------------------------------------------------- *)
 Inductive closure : Type :=
@@ -534,44 +600,131 @@ Lemma scK l c:  sc (sc c l) l = sc c l.
 Proof. by rewrite sc_id_eph // sc_is_ephemeral. Qed.
 
 (* -------------------------------------------------------------------- *)
-(* Small-step call-by-name *)
-Fixpoint cbn (t : term) : option term :=
-  match t with
-    | #n    => None
-    | λ [b] => None
-    | m · n => match cbn m with
-                 | Some m' =>
-                   match m' with
-                     | λ [b] => Some (subst 0 n b)
-                     | _     => Some (m' · n)
-                   end
-                 | None => None
-               end
+Coercion term_of_closure_r := term_of_closure #(0).
+Coercion term_of_ephemeral : ephemeral >-> term.
+
+(*
+(* -------------------------------------------------------------------- *)
+Lemma L B N ρ ρ':
+    σc (ξ [ξ [ρ'] N :: ρ] B) 0
+  = (σc (ξ [^1 :: ρ] B) 1)[!0 ← σc (ξ [ρ'] N) 0] :> term.
+Proof.
+  elim: B => /= [n|t IHt u IHu|t IHt].
+  + case: n => [|n]; last first.
+      rewrite ![sc (ξ [_] #(_)) _]scE /= !ltnS; case: ltnP.
+        move=> ltn_n_szρ.
+
+Lemma L B N ρ ρ' μ:
+    σc (ξ [μ ++ ξ [ρ'] N :: ρ] B) (size μ)
+  = (σc (ξ [μ ++ ^1 :: ρ] B) (size μ).+1)[!size μ ← σc (ξ [ρ'] N) (size μ)] :> term.
+Proof.
+  elim: B μ => /= [n|t IHt u IHu|t IHt] μ.
+  + rewrite ![sc (ξ [_] #(_)) _]scE !size_cat /=.
+
+  
+
+(* -------------------------------------------------------------------- *)
+Lemma L B N ρ l:
+  l <= size ρ ->
+      σc (ξ [ξ [ρ] N :: ρ] B) l
+    = σc (ξ [ρ] (B[!0 ← N])) l.
+Proof.
+  move=> le_l_szρ; apply/eqP; rewrite eqE /= !scCE; apply/eqP.
+  move: le_l_szρ; rewrite -[_::_]cat0s -{1 4}[ρ]cat0s.
+  set μ := [::]; have <-: size μ = 0 by []; move: μ => μ.
+  elim: B μ l => [n|t1 IH1 t2 IH2|t IH] /= μ l le_l_szρ.
+  + rewrite {1}size_cat; case: (ltnP n (size μ)).
+      move=> lt_n_szμ; rewrite ltn_addr //=.
+      by rewrite !nth_cat size_cat ltn_addr // lt_n_szμ.
+    rewrite leq_eqVlt => /orP [/eqP <- /=|lt_szμ_n].
+      rewrite -addSnnS ltn_addr // nth_cat ltnn.
+      rewrite subnn /= eqxx scCE; move: le_l_szρ.
+      rewrite -[_++_]cat0s -{2}[ρ]cat0s.
+      set i := 0; set Ξ := [::]; have ->: i = size Ξ by [].
+      elim: {i} N Ξ l => /= [k|t1 IH1 t2 IH2|t IH] Ξ l le_l_sz.
+      + rewrite !size_cat [_<=k]leqNgt; case: (ltnP k (size Ξ)) => /=.
+          move=> lt_k_szΞ; rewrite ltn_addr //=.
+          by rewrite {1}size_cat ltn_addr // 2!nth_cat lt_k_szΞ.
+        move=> le_szΞ_k; apply/esym; rewrite 2!{1}size_cat addnA.
+        rewrite addnAC ltn_add2r catA nth_cat size_cat.
+        rewrite ltn_add2r [k < size Ξ]ltnNge le_szΞ_k /=.
+        rewrite subnDr nth_cat [k < size Ξ]ltnNge le_szΞ_k /=.
+        case: ltnP => /= [//|]; rewrite -{1}size_cat -catA => le_szΞDszρ.
+        admit.
+      + by rewrite !(IH1, IH2).
+      + by rewrite -cat_cons IH.
+    rewrite /leq subnDA subSn 1?ltnW // -/(leq _ _) /= ltnS.
+    rewrite eqn_leq [n <= _]leqNgt lt_szμ_n /=.
+    rewrite [_.-1<_]/leq [X in n.-1.+1-X]size_cat.
+    rewrite subnDA (@ltn_predK (size μ)) // -/(leq _ _).
+    case: leqP=> [leq_nBszμ_szρ|]; last first.
+      move=> lt_szρ_nBszμ; rewrite !size_cat /= addnS.
+      rewrite -size_cat !subnBA // 1?ltnW // subnS.
+      case: {lt_szρ_nBszμ} n lt_szμ_n => /= [//|n] _.
+      by rewrite addSn subSKn.
+    rewrite !nth_cat !ltnNge -![size μ <= _]ltnS.
+    rewrite (@ltn_predK (size μ)) // ltnW // lt_szμ_n /=.
+    case: n lt_szμ_n leq_nBszμ_szρ => /= [//|n].
+    by rewrite ltnS => leq_szμ_n leq_SnBszμ_szρl; rewrite subSn.
+  + by rewrite !(IH1, IH2).
+  + by rewrite -cat_cons IH.
+Qed.
+*)
+
+(* -------------------------------------------------------------------- *)
+(*                     Small-step call-by-name                          *)
+(* -------------------------------------------------------------------- *)
+Definition cbn (t : term) : option term :=
+  match curry t with
+  | (λ [b], u :: a) => Some (b[!0 ← u] ·! a)
+  | (_    , _     ) => None
   end.
 
 (* -------------------------------------------------------------------- *)
-(* Small-step normal order *)
+(*                     Small-step normal order                          *)
+(* -------------------------------------------------------------------- *)
 Fixpoint nor (t : term) : option term :=
   match t with
-    | #n   => None
-    | λ [b] => match nor b with
-                 | Some b' => Some (λ [b'])
-                 | None    => None
-               end
-    | m · n  => match cbn m with
-                  | Some m' => match m' with
-                                 | λ [b] => Some (subst 0 n b)
-                                 | _     => Some (m' · n)
-                             end
-                  | None    => match nor m with
-                                 | Some m' => Some (m' · n)
-                                 | None    => match nor n with
-                                                | Some n' => Some (m · n')
-                                                | None    => None
-                                              end
-                               end
-                end
+  | #(_)      => None
+  | λ [b]     => omap (fun b' => λ [b']) (nor b)
+  | m · n     => 
+      match cbn m with
+      | Some (λ [b]) => Some (b[!0 ← n])
+      | Some m'      => Some (m' · n)
+      | None         =>
+          match nor m with
+          | Some m' => Some (m' · n)
+          | None    => omap (fun (n' : term) => m · n') (nor n)
+          end
+      end
   end.
+
+(* -------------------------------------------------------------------- *)
+Reserved Notation "t '→_no' u" (at level 50, no associativity, format "t  '→_no'  u").
+
+Inductive no : term -> term -> Prop :=
+| NOBeta : forall B N, (λ [B]) · N →_no B[!0 ← N]
+| NOM1   : forall M M' N, ~ (IsWhnf M) -> M →_no M' -> M · N →_no M' · N
+| NOM2   : forall M M' N, IsWhnf M -> (neutral M) -> M →_no M' -> M · N →_no M' · N
+| NONu   : forall M N N', IsNf M -> (neutral M) -> N →_no N' -> M · N →_no M · N'
+| NOXi   : forall B B', B →_no B' -> λ [B] →_no λ [B']
+
+  where "t '→_no' u" := (no t u).
+
+(* -------------------------------------------------------------------- *)
+Lemma whnf_cbn_normal t: IsWhnf t -> cbn t = None.
+Proof. by elim=> //= x ts; rewrite /cbn crcr. Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma cbnP: forall t u, cbn t = Some u -> t →_no u.
+Proof.
+  move=> t v; rewrite /cbn; case h: (curry t) => [ht a].
+  rewrite -[t]curryE h /=; case: {h} ht => // b.
+  case: a => [//|u us] /= [<-] {t v}.
+  elim/last_ind: us => [|vs v IH]; first by constructor.
+  rewrite !AppS_rcons; apply: NOM1; last by apply: IH.
+  by move/iswhnfP; rewrite -AppS_cons /iswhnf crcr.
+Qed.
 
 (* -------------------------------------------------------------------- *)
 (* Small-step closure call-by-name *)
