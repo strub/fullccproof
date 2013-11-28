@@ -533,6 +533,101 @@ Qed.
 Lemma scK l c:  sc (sc c l) l = sc c l.
 Proof. by rewrite sc_id_eph // sc_is_ephemeral. Qed.
 
+
+(* Reserved Notation "↑ t"           (at level 0, format "↑ t"). *)
+(* Reserved Notation "↑ [ k ] t"     (at level 0, format "↑ [ k ] t"). *)
+(* Reserved Notation "↑ [ k , n ] t" (at level 0, format "↑ [ k , n ] t"). *)
+
+(* Fixpoint lift k n t := *)
+(*   match t with *)
+(*   | #x      => if x >= k then #(x+n) else #x *)
+(*   | t1 · t2 => ↑[k,n] t1 · ↑[k,n] t2 *)
+(*   | λ [t]   => λ [↑[k.+1,n] t] *)
+(*   end *)
+(*     where "↑ [ k , n ] t" := (lift k n t). *)
+
+(* Notation "↑ [ k ] t" := (↑[k,1] t). *)
+(* Notation "↑ t"       := (↑[0] t). *)
+
+
+(* -------------------------------------------------------------------- *)
+Reserved Notation "⇑ [ l ] c"         (at level 0, format "⇑ [ l ] c").
+Reserved Notation "⇑ [ k , l ] c"     (at level 0, format "⇑ [ k , l ] c").
+Reserved Notation "⇑ [ k , n , l ] c" (at level 0, format "⇑ [ k , n , l ] c").
+
+(* Fixpoint lift_clos k n (l : nat) c : closure := *)
+(*   if n == 0 then c *)
+(*   else *)
+(*     match c with *)
+(*       | ⌊x⌋     => if x >= k then ⌊x + n⌋ else ⌊x⌋ *)
+(*       | ^i      => let x := ⌊i - l⌋ *)
+(*                    in if x >= k then ⌊x + n⌋ else ⌊x⌋ *)
+(*       | λλ [cb] => λλ [⇑ [k + 1, n, l + 1] cb] *)
+(*       | cm ○ cn => (⇑ [k, n, l] cm) ○ (⇑ [k, n, l] cn) *)
+(*       | ξ [r] t => *)
+(*         let fix lct k n l ls c : closure := *)
+(*             match t with *)
+(*               | #i => *)
+(*                 let c' := nth ⌊0⌋ ls i *)
+(*                 in match c' with *)
+(*                      | ⌊0⌋ => (* out of bound *) *)
+(*                        let x := i - (size ls - l) *)
+(*                        in if x >= k then ⌊x + n⌋ else ⌊x⌋ *)
+(*                      | _   => *)
+(*                        ξ [take (i - 1) ls ++ *)
+(*                                (lct k n l ls c') :: drop i ls] t *)
+(*                    end *)
+(*               | λ [b]   => lct k n l ls (λλ [ξ [^(l + 1) :: ls] b]) *)
+(*               | m1 · m2 => lct k n l ls ((ξ [ls] m1) ○ (ξ [ls] m2)) *)
+(*             end *)
+(*         in lct k n c l [::] *)
+(*     end *)
+(*       where "⇑ [ k , n , l ] c" := (lift_clos k n l c). *)
+(* ALVARO: I really tried to make it a fixpoint `:| *)
+
+Function lift_clos (k n l : nat) (c : closure) {measure h c} : closure :=
+  if n == 0 then c
+  else
+    match c with
+      | ⌊x⌋     => if x >= k then ⌊x + n⌋ else ⌊x⌋
+      | ^i      => let x := i - l
+                   in if x >= k then ⌊x + n⌋ else ⌊x⌋
+      | λλ [cb] => λλ [lift_clos (k + 1) n (l + 1) cb]
+      | cm ○ cn => (lift_clos k n l cm) ○ (lift_clos k n l cn)
+      | ξ [r] t =>
+        match t with
+          | #i =>
+            let c' := nth ⌊0⌋ r i
+            in match c' with
+                 | ⌊0⌋ => (* out of bound *)
+                   let x := i - (size r - l)
+                   in if x >= k then ⌊x + n⌋ else ⌊x⌋
+                 | _   =>
+                   ξ [take (i - 1) r ++ (lift_clos k n l c') :: drop i r] t
+               end
+          | λ [b]   => lift_clos k n l (λλ [ξ [^(l + 1) :: r] b])
+          | m1 · m2 => lift_clos k n l ((ξ [r] m1) ○ (ξ [r] m2))
+        end
+    end.
+Proof.
+  admit. admit. admit. admit. admit.
+  admit. admit. admit. admit. admit.
+Qed.
+
+(* Notation "⇑ [ k , l ] c" := (⇑[k, 1, l] c). *)
+(* Notation "⇑ [ l ] c"     := (⇑[0, l] c). *)
+(* ALVARO: What is wrong with this? *)
+
+(* -------------------------------------------------------------------- *)
+Lemma lift_clos_n0 c k l: lift_clos k 0 l c = c.
+Proof.
+  (* elim: c k => /= [n|c IHt u IHu|c IH] k. *)
+  (* + by rewrite addn0; case: leqP. *)
+  (* + by rewrite !(IHt, IHu). *)
+  (* + by rewrite IH. *)
+  admit.
+Qed.
+
 (* -------------------------------------------------------------------- *)
 (* Small-step call-by-name *)
 Fixpoint cbn (t : term) : option term :=
@@ -853,6 +948,7 @@ Theorem red_comm_sc :
   forall (t : term),
     map_option (fun c => sc c 0) (nor_beta (nor_eph_exp (ξ [[::]] t) 0) 0) =
     map_option closure_of_term (nor t).
+
 
 (*
 *** Local Variables: ***
