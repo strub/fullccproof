@@ -601,23 +601,6 @@ Qed.
 Lemma scK l c:  sc (sc c l) l = sc c l.
 Proof. by rewrite sc_id_eph // sc_is_ephemeral. Qed.
 
-
-(* Reserved Notation "↑ t"           (at level 0, format "↑ t"). *)
-(* Reserved Notation "↑ [ k ] t"     (at level 0, format "↑ [ k ] t"). *)
-(* Reserved Notation "↑ [ k , n ] t" (at level 0, format "↑ [ k , n ] t"). *)
-
-(* Fixpoint lift k n t := *)
-(*   match t with *)
-(*   | #x      => if x >= k then #(x+n) else #x *)
-(*   | t1 · t2 => ↑[k,n] t1 · ↑[k,n] t2 *)
-(*   | λ [t]   => λ [↑[k.+1,n] t] *)
-(*   end *)
-(*     where "↑ [ k , n ] t" := (lift k n t). *)
-
-(* Notation "↑ [ k ] t" := (↑[k,1] t). *)
-(* Notation "↑ t"       := (↑[0] t). *)
-
-
 (* -------------------------------------------------------------------- *)
 Reserved Notation "⇑ [ l ] c"         (at level 0, format "⇑ [ l ] c").
 Reserved Notation "⇑ [ k , l ] c"     (at level 0, format "⇑ [ k , l ] c").
@@ -782,7 +765,7 @@ Fixpoint nor (t : term) : option term :=
   match t with
   | #(_)      => None
   | λ [b]     => omap (fun b' => λ [b']) (nor b)
-  | m · n     => 
+  | m · n     =>
       match cbn m with
       | Some (λ [b]) => Some (b[!0 ← n])
       | Some m'      => Some (m' · n)
