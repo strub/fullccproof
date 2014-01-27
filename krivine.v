@@ -774,7 +774,19 @@ Proof.
           rewrite addn1 -addSn -[X in l.+1 + n - X]addn0 subnDl subn0.
           rewrite ltnn eqxx; move: (@L3_8_2_r (ξ [ρ] N) N ρ l0 l 0 0 n).
           by rewrite !(addn0, add0n) /= => -> //; inversion wfρ.
-        + admit.
+        + case: n lt_n_mDSρ => // n; rewrite addnS ltnS.          
+          move=> lt_n_mDρ lt_m_Sn; rewrite !nth_cat !size_μ ltnNge ltnW //=.
+          rewrite subSn //=; set c := nth _ _ _; have cρ: c \in ρ.
+            by rewrite mem_nth // -subSn // leq_subLR.
+          have wf'ρ: wf ρ l0 by inversion wfρ. case: (mem_wf wf'ρ cρ).
+          - case=> i -> le_i_l0; rewrite ![sc ^_ _]scE !c2tE /=.
+            have ->: l + m + 1 - i = m.+1 + (l - i).
+              by rewrite addn1 -addnS addnC addnBA // (@leq_trans l0).
+            rewrite ltnNge ltnW ?ltn_addr //= addSnnS.
+            rewrite -[X in _==X]addn0 eqn_add2l /=. 
+            by rewrite addnC -addnBA // (@leq_trans l0).
+          - case=> [T] [ρ'] [l'] [cE wf_ρ'_l' le_l'_l0]; rewrite cE.
+            admit.
      * move=> le_mDSρ_n; set q := n - (m + (size ρ).+1).
        have h: forall h, n + h - (m + (size ρ).+1) = q + h.
          by move=> h; rewrite addnC -addnBA // addnC.
