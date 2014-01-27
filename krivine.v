@@ -1,5 +1,5 @@
 (* -------------------------------------------------------------------- *)
-Require Import ssreflect eqtype ssrbool ssrnat ssrfun seq Recdef.
+Require Import ssreflect eqtype ssrbool ssrnat ssrfun seq.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -235,9 +235,10 @@ Proof.
   + by rewrite IH.
 Qed.
 
-
 (* -------------------------------------------------------------------- *)
 Reserved Notation "t [! x ← u ]" (at level 8, x, u at level 15, format "t [! x  ←  u ]").
+
+Delimit Scope I with I.
 
 Fixpoint subst k w t :=
   match t with
@@ -411,7 +412,7 @@ Module HeightI.
     | ξ [cs] t =>
         let fix ht t hs k {struct t} :=
           match t with
-          | #i      => if i < k then 1 else nth 0 hs (i-k)
+          | #i      => if i < k then 1 else nth 0hs (i-k)
           | λ [t]   => (ht t hs k.+1).+1
           | t1 · t2 => (maxn (ht t1 hs k) (ht t2 hs k)).+1
           end
@@ -493,7 +494,7 @@ Module SCI.
                        then ⌊l - nth 0 ls n⌋
                        else if   n < size ls + size cs
                             then nth ⌊0⌋ [seq sc c l | c <- cs] (n - size ls)
-                            else ⌊n - ((size ls + size cs) - l)⌋
+                            else ⌊n + l - (size ls + size cs)⌋
           | λ [t]   => λλ [sct t l.+1 (l.+1 :: ls)]
           | t1 · t2 => (sct t1 l ls ○ sct t2 l ls)
           end
@@ -515,7 +516,7 @@ Module SC : SCSig.
   Proof. by []. Qed.
 End SC.
 
-Notation sc := SC.sc.
+Notation  sc := SC.sc.
 Canonical sc_unlock := Unlockable SC.scE.
 
 (* -------------------------------------------------------------------- *)
@@ -523,7 +524,7 @@ Fixpoint sct cs t l : closure :=
   match t with
   | #n      => if   n < size cs
                then sc (nth ⌊0⌋ cs n) l
-               else ⌊n - (size cs - l)⌋
+               else ⌊n + l - size cs⌋
   | λ [t]   => λλ [sct (^l.+1 :: cs) t l.+1]
   | t1 · t2 => sct cs t1 l ○ sct cs t2 l
   end.
@@ -559,7 +560,7 @@ Section SecE.
              | c1 ○ c2          => (sc c1 l) ○ (sc c2 l)
              | ξ [cs] #n        => if   n < size cs
                                    then sc (nth ⌊0⌋ cs n) l
-                                   else ⌊n - (size cs - l)⌋
+                                   else ⌊n + l - size cs⌋
              | ξ [cs] (λ [t])   => sc (λλ [ξ [^(l.+1) :: cs] t]) l
              | ξ [cs] (t1 · t2) => sc (ξ [cs] t1 ○ ξ [cs] t2) l
              end.
@@ -602,492 +603,151 @@ Lemma scK l c:  sc (sc c l) l = sc c l.
 Proof. by rewrite sc_id_eph // sc_is_ephemeral. Qed.
 
 (* -------------------------------------------------------------------- *)
-Reserved Notation "⇑ [ l ] c"         (at level 0, format "⇑ [ l ] c").
-Reserved Notation "⇑ [ k , l ] c"     (at level 0, format "⇑ [ k , l ] c").
-Reserved Notation "⇑ [ k , n , l ] c" (at level 0, format "⇑ [ k , n , l ] c").
-
-(* Fixpoint lift_clos k n (l : nat) c : closure := *)
-(*   if n == 0 then c *)
-(*   else *)
-(*     match c with *)
-(*       | ⌊x⌋     => if x >= k then ⌊x + n⌋ else ⌊x⌋ *)
-(*       | ^i      => let x := ⌊i - l⌋ *)
-(*                    in if x >= k then ⌊x + n⌋ else ⌊x⌋ *)
-(*       | λλ [cb] => λλ [⇑ [k + 1, n, l + 1] cb] *)
-(*       | cm ○ cn => (⇑ [k, n, l] cm) ○ (⇑ [k, n, l] cn) *)
-(*       | ξ [r] t => *)
-(*         let fix lct k n l ls c : closure := *)
-(*             match t with *)
-(*               | #i => *)
-(*                 let c' := nth ⌊0⌋ ls i *)
-(*                 in match c' with *)
-(*                      | ⌊0⌋ => (* out of bound *) *)
-(*                        let x := i - (size ls - l) *)
-(*                        in if x >= k then ⌊x + n⌋ else ⌊x⌋ *)
-(*                      | _   => *)
-(*                        ξ [take (i - 1) ls ++ *)
-(*                                (lct k n l ls c') :: drop i ls] t *)
-(*                    end *)
-(*               | λ [b]   => lct k n l ls (λλ [ξ [^(l + 1) :: ls] b]) *)
-(*               | m1 · m2 => lct k n l ls ((ξ [ls] m1) ○ (ξ [ls] m2)) *)
-(*             end *)
-(*         in lct k n c l [::] *)
-(*     end *)
-(*       where "⇑ [ k , n , l ] c" := (lift_clos k n l c). *)
-(* ALVARO: I really tried to make it a fixpoint `:| *)
-
-Function lift_clos (k n l : nat) (c : closure) {measure h c} : closure :=
-  if n == 0 then c
-  else
-    match c with
-      | ⌊x⌋     => if x >= k then ⌊x + n⌋ else ⌊x⌋
-      | ^i      => let x := i - l
-                   in if x >= k then ⌊x + n⌋ else ⌊x⌋
-      | λλ [cb] => λλ [lift_clos (k + 1) n (l + 1) cb]
-      | cm ○ cn => (lift_clos k n l cm) ○ (lift_clos k n l cn)
-      | ξ [r] t =>
-        match t with
-          | #i =>
-            let c' := nth ⌊0⌋ r i
-            in match c' with
-                 | ⌊0⌋ => (* out of bound *)
-                   let x := i - (size r - l)
-                   in if x >= k then ⌊x + n⌋ else ⌊x⌋
-                 | _   =>
-                   ξ [take (i - 1) r ++ (lift_clos k n l c') :: drop i r] t
-               end
-          | λ [b]   => lift_clos k n l (λλ [ξ [^(l + 1) :: r] b])
-          | m1 · m2 => lift_clos k n l ((ξ [r] m1) ○ (ξ [r] m2))
-        end
-    end.
-Proof.
-  admit. admit. admit. admit. admit.
-  admit. admit. admit. admit. admit.
-Qed.
-
-(* Notation "⇑ [ k , l ] c" := (⇑[k, 1, l] c). *)
-(* Notation "⇑ [ l ] c"     := (⇑[0, l] c). *)
-(* ALVARO: What is wrong with this? *)
-
-(* -------------------------------------------------------------------- *)
-Lemma lift_clos_n0 c k l: lift_clos k 0 l c = c.
-Proof.
-  (* unfold lift_clos. *)
-  (* rewrite unlock. *)
-  admit.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-Coercion term_of_closure_r := term_of_closure #(0).
+Coercion term_of_closure_r := locked (term_of_closure #(0)).
 Coercion term_of_ephemeral : ephemeral >-> term.
 
-(*
 (* -------------------------------------------------------------------- *)
-Lemma L B N ρ ρ':
-    σc (ξ [ξ [ρ'] N :: ρ] B) 0
-  = (σc (ξ [^1 :: ρ] B) 1)[!0 ← σc (ξ [ρ'] N) 0] :> term.
-Proof.
-  elim: B => /= [n|t IHt u IHu|t IHt].
-  + case: n => [|n]; last first.
-      rewrite ![sc (ξ [_] #(_)) _]scE /= !ltnS; case: ltnP.
-        move=> ltn_n_szρ.
-
-Lemma L B N ρ ρ' μ:
-    σc (ξ [μ ++ ξ [ρ'] N :: ρ] B) (size μ)
-  = (σc (ξ [μ ++ ^1 :: ρ] B) (size μ).+1)[!size μ ← σc (ξ [ρ'] N) (size μ)] :> term.
-Proof.
-  elim: B μ => /= [n|t IHt u IHu|t IHt] μ.
-  + rewrite ![sc (ξ [_] #(_)) _]scE !size_cat /=.
-
-  
+Lemma c2tE:
+    (forall n, ⌊n⌋ = #n :> term)
+  * (forall c, λλ [c] = λ [c] :> term)
+  * (forall c1 c2, c1 ○ c2 = c1 · c2 :> term).
+Proof. by do! split; rewrite /term_of_closure_r -lock. Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma L B N ρ l:
-  l <= size ρ ->
-      σc (ξ [ξ [ρ] N :: ρ] B) l
-    = σc (ξ [ρ] (B[!0 ← N])) l.
+Inductive wfc : nat -> seq closure -> nat -> Prop :=
+| WFCEmpty:
+    forall n, wfc 0 [::] n
+
+| WFCTerm:
+    forall i t ρt ρ n, i <= n
+     -> wfc i ρt i
+     -> wfc i ρ  n
+     -> wfc i (ξ [ρt] t :: ρ) n
+
+| WFCFormal:
+    forall i ρ n, i.+1 <= n
+     -> wfc i    ρ n
+     -> wfc i.+1 (^i.+1 :: ρ) n
+.
+Derive Inversion_clear WFCCons with
+  (forall i c ρ n, wfc i (c :: ρ) n) Sort Prop.
+
+Definition asformal (c : closure) :=
+  if c is ^i then Some i else None.
+
+Definition formals (ρ : seq closure) :=
+  pmap asformal ρ.
+
+Lemma formals_cat (ρ1 ρ2 : seq closure):
+  formals (ρ1 ++ ρ2) = formals ρ1 ++ formals ρ2.
+Proof. by elim: ρ1 => [//|c ρ1 /= ->]; case: (asformal c). Qed.
+
+Lemma wfc_le i ρ n: wfc i ρ n -> i <= n.
+Proof. by elim. Qed.
+
+Lemma wfc_lesz i ρ n: wfc i ρ n -> i <= size ρ.
+Proof. by elim=> //= {i ρ n} i _ _ ρ _ _ _ _ _ ?; rewrite ltnW. Qed.
+
+Lemma wfc_formals i ρ n:
+  wfc i ρ n -> formals ρ = rev (iota 1 i).
 Proof.
-  move=> le_l_szρ; apply/eqP; rewrite eqE /= !scCE; apply/eqP.
-  move: le_l_szρ; rewrite -[_::_]cat0s -{1 4}[ρ]cat0s.
-  set μ := [::]; have <-: size μ = 0 by []; move: μ => μ.
-  elim: B μ l => [n|t1 IH1 t2 IH2|t IH] /= μ l le_l_szρ.
-  + rewrite {1}size_cat; case: (ltnP n (size μ)).
-      move=> lt_n_szμ; rewrite ltn_addr //=.
-      by rewrite !nth_cat size_cat ltn_addr // lt_n_szμ.
-    rewrite leq_eqVlt => /orP [/eqP <- /=|lt_szμ_n].
-      rewrite -addSnnS ltn_addr // nth_cat ltnn.
-      rewrite subnn /= eqxx scCE; move: le_l_szρ.
-      rewrite -[_++_]cat0s -{2}[ρ]cat0s.
-      set i := 0; set Ξ := [::]; have ->: i = size Ξ by [].
-      elim: {i} N Ξ l => /= [k|t1 IH1 t2 IH2|t IH] Ξ l le_l_sz.
-      + rewrite !size_cat [_<=k]leqNgt; case: (ltnP k (size Ξ)) => /=.
-          move=> lt_k_szΞ; rewrite ltn_addr //=.
-          by rewrite {1}size_cat ltn_addr // 2!nth_cat lt_k_szΞ.
-        move=> le_szΞ_k; apply/esym; rewrite 2!{1}size_cat addnA.
-        rewrite addnAC ltn_add2r catA nth_cat size_cat.
-        rewrite ltn_add2r [k < size Ξ]ltnNge le_szΞ_k /=.
-        rewrite subnDr nth_cat [k < size Ξ]ltnNge le_szΞ_k /=.
-        case: ltnP => /= [//|]; rewrite -{1}size_cat -catA => le_szΞDszρ.
-        admit.
-      + by rewrite !(IH1, IH2).
-      + by rewrite -cat_cons IH.
-    rewrite /leq subnDA subSn 1?ltnW // -/(leq _ _) /= ltnS.
-    rewrite eqn_leq [n <= _]leqNgt lt_szμ_n /=.
-    rewrite [_.-1<_]/leq [X in n.-1.+1-X]size_cat.
-    rewrite subnDA (@ltn_predK (size μ)) // -/(leq _ _).
-    case: leqP=> [leq_nBszμ_szρ|]; last first.
-      move=> lt_szρ_nBszμ; rewrite !size_cat /= addnS.
-      rewrite -size_cat !subnBA // 1?ltnW // subnS.
-      case: {lt_szρ_nBszμ} n lt_szμ_n => /= [//|n] _.
-      by rewrite addSn subSKn.
-    rewrite !nth_cat !ltnNge -![size μ <= _]ltnS.
-    rewrite (@ltn_predK (size μ)) // ltnW // lt_szμ_n /=.
-    case: n lt_szμ_n leq_nBszμ_szρ => /= [//|n].
-    by rewrite ltnS => leq_szμ_n leq_SnBszμ_szρl; rewrite subSn.
-  + by rewrite !(IH1, IH2).
-  + by rewrite -cat_cons IH.
+  elim=> //= {i ρ n} i ρ n _ _ ->; rewrite -rev_rcons -cat1s -cats1.
+     have ->: [:: 1   ] = (iota 1    1)%N by []; rewrite -iota_add add1n.
+  by have ->: [:: i.+1] = (iota i.+1 1)%N by []; rewrite -iota_add addn1.
 Qed.
-*)
 
-(* -------------------------------------------------------------------- *)
-(*                     Small-step call-by-name                          *)
-(* -------------------------------------------------------------------- *)
-Definition cbn (t : term) : option term :=
-  match curry t with
-  | (λ [b], u :: a) => Some (b[!0 ← u] ·! a)
-  | (_    , _     ) => None
-  end.
+Lemma wfc_hformal i ρ n: wfc i ρ n -> head 0 (formals ρ) = i.
+Proof. by elim. Qed.
 
-(* -------------------------------------------------------------------- *)
-(*                     Small-step normal order                          *)
-(* -------------------------------------------------------------------- *)
-Fixpoint nor (t : term) : option term :=
-  match t with
-  | #(_)      => None
-  | λ [b]     => omap (fun b' => λ [b']) (nor b)
-  | m · n     =>
-      match cbn m with
-      | Some (λ [b]) => Some (b[!0 ← n])
-      | Some m'      => Some (m' · n)
-      | None         =>
-          match nor m with
-          | Some m' => Some (m' · n)
-          | None    => omap (fun (n' : term) => m · n') (nor n)
-          end
-      end
-  end.
-
-(* -------------------------------------------------------------------- *)
-Reserved Notation "t '→_no' u" (at level 50, no associativity, format "t  '→_no'  u").
-
-Inductive no : term -> term -> Prop :=
-| NOBeta : forall B N, (λ [B]) · N →_no B[!0 ← N]
-| NOM1   : forall M M' N, ~ (IsWhnf M) -> M →_no M' -> M · N →_no M' · N
-| NOM2   : forall M M' N, IsWhnf M -> (neutral M) -> M →_no M' -> M · N →_no M' · N
-| NONu   : forall M N N', IsNf M -> (neutral M) -> N →_no N' -> M · N →_no M · N'
-| NOXi   : forall B B', B →_no B' -> λ [B] →_no λ [B']
-
-  where "t '→_no' u" := (no t u).
-
-(* -------------------------------------------------------------------- *)
-Lemma whnf_cbn_normal t: IsWhnf t -> cbn t = None.
-Proof. by elim=> //= x ts; rewrite /cbn crcr. Qed.
-
-(* -------------------------------------------------------------------- *)
-Lemma cbnP: forall t u, cbn t = Some u -> t →_no u.
+Lemma wfc_cat i ρ1 ρ2 n: wfc i (ρ1 ++ ρ2) n -> wfc (head 0 (formals ρ2)) ρ2 n.
 Proof.
-  move=> t v; rewrite /cbn; case h: (curry t) => [ht a].
-  rewrite -[t]curryE h /=; case: {h} ht => // b.
-  case: a => [//|u us] /= [<-] {t v}.
-  elim/last_ind: us => [|vs v IH]; first by constructor.
-  rewrite !AppS_rcons; apply: NOM1; last by apply: IH.
-  by move/iswhnfP; rewrite -AppS_cons /iswhnf crcr.
+  elim: ρ1 i => /= [|c ρ ih]; last first.
+    move=> i h; inversion h using WFCCons.
+    * by move=> _ _ _ _ /ih.
+    * by move=> j _ /ih.
+  elim: ρ2 => /= [|c ρ ih] i; first by move=> _; constructor.
+  move=> h; inversion h using WFCCons => /=.
+  + by move=> t ρt le_i_n wfρt wfρ; rewrite (wfc_hformal wfρ); constructor.
+  + by move=> j lt_j_n wfρ; constructor.
+Qed.
+
+Notation wf ρ l := (wfc l ρ l).
+
+Definition μ l m := [seq ^i | i <- rev (iota l.+1 m)].
+
+Lemma μS l m: μ l m.+1 = ^(l+m).+1 :: μ l m.
+Proof.
+  rewrite /μ -map_cons -rev_rcons -cats1.
+  have ->: [:: (l+m).+1] = iota (l+m).+1 1 by [].
+  by rewrite -iota_add addn1.
+Qed.
+
+Lemma size_μ l m: size (μ l m) = m.
+Proof. by rewrite /μ size_map size_rev size_iota. Qed.
+
+Lemma nth_μ c l m k: k < m -> nth c (μ l m) k = ^(l + m - k).
+Proof.
+  move=> lt_k_m; rewrite /μ (nth_map 0) ?(size_rev, size_iota) //.
+  rewrite nth_rev ?size_iota // nth_iota; last first.
+    by rewrite /leq -subSn // subSS -subnDA -/(leq _ _) leq_addl.
+  by rewrite subnS addSn -addnS prednK ?subn_gt0 // addnBA 1?ltnW //.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-(* Small-step closure call-by-name *)
-Function clos_cbn (c : closure) (l : nat) {measure h c}: option closure :=
-  match c with
-    | ξ [r] t =>
-      match t with
-        | #n =>
-          match nth ⌊0⌋ r n with
-            | (ξ [_] _ | ^_) as c' => clos_cbn c' l
-            | ⌊0⌋                  => Some ⌊(n - (length r - l))⌋
-            | _                    => None (* imp. case *)
-          end
-        | λ [b] => Some (λλ [ξ [^(l + 1) :: r] b])
-        | m · n => Some ((ξ [r] m) ○ (ξ [r] n))
-      end
-    | ^n      => Some ⌊l - n⌋
-    | λλ [cb] => None
-    | cm ○ cn => match clos_cbn cm l with
-                   | Some cm' =>
-                     match cm' with
-                       | λλ [ξ [^_ :: r'] t] => Some (ξ [cn :: r'] t)
-                       | λλ [cb]             => None (* imp. case *)
-                       | _                   => Some (cm' ○ cn)
-                     end
-                   | None => None
-                 end
-    | ⌊n⌋ => None
-  end.
+Lemma mem_wf l ρ c: wf ρ l -> c \in ρ ->
+  [\/ exists2 i, c = ^i & i <= l
+    | exists T ρ' l', [/\ c = ξ [ρ'] T, wf ρ' l' & l' <= l]].
 Proof.
-  (* Subgoal 1 *)
-  intros.
-  rewrite (hE (ξ [r] #n)).
-  rewrite (nth_map ⌊0⌋) ?teq1 //.
-  rewrite ltnNge; apply/negP => le_szr_n; move: teq1.
-  by rewrite nth_default.
-  (* Subgoal 2 *)
-  intros.
-  rewrite (hE (ξ [r] #n)).
-  rewrite (nth_map ⌊0⌋) ?teq1 //.
-  rewrite ltnNge; apply/negP => le_szr_n; move: teq1.
-  by rewrite nth_default.
-  (* Subgoal 3 *)
-  intros.
-  rewrite (hE (cm ○ cn)).
-  admit.
+  elim=> //=.
+  + move=> i t pt ρ' n le_in wf_pt IHpt wfρ' IHρ'; rewrite inE.
+    case/orP; [move/eqP=> -> | by move/IHρ'].
+    by right; exists t, pt, i.
+  + move=> i ρ' n lt_in wfρ' IHρ'; rewrite inE.
+    case/orP; [move/eqP=> -> | by move/IHρ'].
+    by left; exists i.+1.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-(* Small-step closure normal order *)
-(* Function clos_nor (c : closure) (l : nat) {measure h c} : option closure := *)
-(*   match c with *)
-(*     | ξ [r] t => *)
-(*       match t with *)
-(*         | #n    => match nth ⌊0⌋ r n with *)
-(*                      | (ξ [_] _ | ^_) as c' => clos_nor c' l *)
-(*                      | ⌊0⌋                  => Some ⌊n - (length r - l)⌋ *)
-(*                      | _                    => None (* imp. case *) *)
-(*                   end *)
-(*         | λ [b] => Some (λλ [ξ [^(l + 1) :: r] b]) *)
-(*         | m · n => Some (ξ [r] m ○ ξ [r] n) *)
-(*       end *)
-(*     | ^n      => Some ⌊l - n⌋ *)
-(*     | λλ [cb] => let ob := clos_nor cb (l + 1) *)
-(*                  in match ob with *)
-(*                       | (Some cb') => Some (λλ [cb']) *)
-(*                       | None       => None *)
-(*                     end *)
-(*     | cm ○ cn => match clos_cbn cm l with *)
-(*                    | Some cm' => *)
-(*                      match cm' with *)
-(*                        | λλ [ξ [^_ :: r'] t] => Some (ξ [cn :: r'] t) *)
-(*                        | _ => *)
-(*                          let om := clos_nor cm' l *)
-(*                          in match om with *)
-(*                               | Some cm'' => *)
-(*                                 let on := clos_nor cn l *)
-(*                                 in match on with *)
-(*                                      | Some cn' => Some (cm'' ○ cn') *)
-(*                                      | None     => None *)
-(*                                    end *)
-(*                               | None => None *)
-(*                             end *)
-(*                      end *)
-(*                    | None => None *)
-(*                  end *)
-(*     | ⌊_⌋ => None *)
-(*   end. *)
-(* Proof. *)
-
-Lemma clos_nor:
-  forall (c : closure) (l : nat), option closure.
-  admit.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-Fixpoint iscneu_r (c : closure) : bool :=
-  match c with
-    | ⌊_⌋     => true
-    | c1 ○ c2 => (iscneu_r c1)
-    | _       => false
-  end.
-
-Fixpoint iscwhnf_r (c : closure) : bool :=
-  match c with
-    | λλ [cb] => true
-    | _       => iscneu_r c
-  end.
-
-Definition iscneu := fun c => iscneu_r  c.
-
-Definition iscwhnf := fun c => iscwhnf_r c.
-
-Fixpoint iscnf_r (b : bool)(c : closure) : bool :=
-  match c with
-    | λλ [cb] => b && iscnf_r true cb
-    | ⌊_⌋     => true
-    | c1 ○ c2 => iscnf_r false c1 && iscnf_r true c2
-    | _       => false
-  end.
-
-Fixpoint iscneunf_r (c : closure) : bool :=
-  match c with
-    | ⌊_⌋     => true
-    | c1 ○ c2 => (iscneunf_r c1) && (iscnf_r true c2)
-    | _       => false
-  end.
-
-Definition iscneunf := fun c => iscneunf_r c.
-
-Definition iscnf := fun c => iscnf_r true c.
-
-(* -------------------------------------------------------------------- *)
-(* Curry thing for closures *)
-
-(* Inductive IsCWhnf : closure -> Prop := *)
-(* | IsCWhnfLam : forall c, IsCWhnf (λ [c]) *)
-(* | IsCWhnfVar : forall x cs, IsWhnf (#x ·! cs). *)
-
-(* -------------------------------------------------------------------- *)
-(* Call-by-name ephemeral expansion *)
-Function cbn_eph_exp (c : closure) (l : nat) {measure h c} : closure :=
-  match c with
-    | ξ [r] t =>
-      match t with
-        | #n =>
-          match nth ⌊0⌋ r n with
-            | (ξ [_] _ | ^_) as c' => cbn_eph_exp c' l
-            | ⌊0⌋                  => ⌊n - (length r - l)⌋
-            | _                    => ⌊0⌋ (* imp. case *)
-          end
-        | λ [b] => c
-        | m · n => cbn_eph_exp (ξ [r] m ○ ξ [r] n) l
-      end
-    | ^n      => ⌊n - l⌋
-    | ⌊_⌋     => c
-    | λλ [cb] => c
-    | cm ○ cn => let cm' := cbn_eph_exp cm l
-                 in cm' ○ cn
-  end.
+Lemma L3_8_2:
+  forall c,
+    forall N ρ l0 l k0 k m, c = ξ [ρ] N -> l >= l0 -> wf ρ l0 ->
+          σc (ξ [μ (l+k0+m) k ++ ρ] N) (l+k0+k+m)
+        = ↑[k+k0,m] (σc (ξ [μ (l+k0) k ++ ρ] N) (l+k0+k)) :> term.
 Proof.
-admit. admit. admit. admit.
+  elim/clind=> // t ρ IH N ρ' l0 l k0 k m [_ <-] {t ρ'}.
+  elim: N l0 l k0 k m.
+  + move=> n l0 l k0 k m le_l0_l wf_ρ_l0 /=.
+    rewrite scE [X in ↑[_,_] (_ X)]scE !size_cat !size_μ; case: ltnP.
+    * move=> lt_n_kDρ; case: (ltnP n k) => [lt_nk|le_kn].
+      + rewrite !nth_cat !size_μ lt_nk !nth_μ // !scE /=.
+        rewrite [_+m]addnAC !subKn; try by rewrite ltnW // ltn_addl.
+        by rewrite !c2tE /= leqNgt ltn_addr.
+      + rewrite !nth_cat !size_μ ltnNge le_kn /=; set c := nth _ _ _.
+        have cρ: c \in ρ by rewrite mem_nth // -subSn // leq_subLR.
+        case (mem_wf wf_ρ_l0 cρ).
+        - case=> i -> le_i_l0; rewrite !scE !c2tE /=.
+          have le_i_lt := leq_trans le_i_l0 le_l0_l.
+          apply/esym; rewrite {1}[_+k]addnC {1}[l+_]addnC !addnA.
+          rewrite -addnBA 1?leq_addr // addnC addnBA; first by rewrite addnC.
+          by rewrite -addnA -[i]addn0 leq_add.
+        - case=> T [ρ'] [l'] [cE wf_ρ'_l' le_l'_l0]; rewrite cE.
+          have le_l'_l := leq_trans le_l'_l0 le_l0_l.
+          have /= := IH _ cρ _ _ _ _ (k0+k) 0 m cE le_l'_l wf_ρ'_l'.
+          by rewrite !(addn0, add0n, addnA) [k+k0]addnC.
+      + move=> le_kDρ_n; set q := n - (k + size ρ).
+        have h: forall h, n + h - (k + size ρ) = q + h.
+          by move=> h; rewrite addnC -addnBA // addnC.
+        by rewrite !{}h !c2tE /= !addnA [k+k0]addnC leq_add2r leq_addl.
+  + move=> t IHt u IHu l0 l k0 k m le_l0_l wf_ρ_l0 /=.
+    by rewrite 2!scE !c2tE /= (IHt l0) // (IHu l0) // 2!scE c2tE.
+  + move=> t IHt l0 l k0 k m le_l0_l wf_ρ_l0 /=.
+    rewrite 2!scE [_+m]addnAC -cat_cons -!μS !c2tE /=.
+    rewrite -!addnS [_+k.+1]addnAC (IHt l0) //.
+    by rewrite 2!scE c2tE /= -cat_cons -μS -addSn -!addnS.
 Qed.
-
-(* -------------------------------------------------------------------- *)
-(* Normal order ephemeral expansion *)
-Function nor_eph_exp (c : closure) (l : nat) {measure h c} : closure :=
-  match c with
-    | ξ [r] t =>
-      match t with
-        | #n =>
-          match nth ⌊0⌋ r n with
-            | (ξ [_] _ | ^_) as c' => nor_eph_exp c' l
-            | ⌊0⌋                  => ⌊n - (length r - l)⌋
-            | _                    => ⌊0⌋ (* imp. case *)
-          end
-        | λ [b] => c
-        | m · n => nor_eph_exp (ξ [r] m ○ ξ [r] n) l
-      end
-    | ^n      => ⌊n - l⌋
-    | ⌊n⌋     => c
-    | λλ [cb] => c
-    | cm ○ cn => let cm' := cbn_eph_exp cm l
-                 in cm' ○ cn
-  end.
-Proof.
-admit. admit. admit.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-Fixpoint iscexp_r (b : bool)(c : closure) : bool :=
-  match c with
-    | λλ [cb] => b && iscexp_r true cb
-    | ⌊_⌋     => true
-    | (λλ [ξ [^_ :: _] _]) ○ _ => true
-    | c1 ○ c2 => (iscexp_r false c1) || (iscnf_r false c1 && iscnf_r true c2)
-    | _       => false
-  end.
-
-Definition iscexp := fun c => iscexp_r true c.
-
-(* -------------------------------------------------------------------- *)
-(* Call-by-name beta contraction *)
-Function cbn_beta (c : closure) : option closure :=
-  match c with
-    | ξ [r] t => None
-    | λλ [cb] => None
-    | ^n      => None
-    | (λλ [ξ [^_ :: r] b]) ○ cn => Some (ξ [cn :: r] b)
-    | cm ○ cn => let om := cbn_beta cm
-                 in match om with
-                      | Some cm' => Some (cm' ○ cn)
-                      | None     => None
-                    end
-    | ⌊_⌋ => None
-  end.
-
-(* -------------------------------------------------------------------- *)
-(* Normal order beta contraction *)
-Function nor_beta (c : closure) (l : nat) : option closure :=
-  match c with
-    | ξ [r] t => None
-    | λλ [cb] => let ob := nor_beta cb (l + 1)
-                 in match ob with
-                      | Some cb' => Some (λλ [cb'])
-                      | None     => None
-                    end
-    | ^n      => None
-    | (λλ [ξ [^_ :: r] b]) ○ cn => Some (ξ [cn :: r] b)
-    | cm ○ cn =>
-      let om := cbn_beta cm
-      in match om with
-           | Some cm' => Some (cm' ○ cn)
-           | None     =>
-             let om' := nor_beta cm l
-             in match om' with
-                  | Some cm'' => Some (cm'' ○ cn)
-                  | None      => let on := nor_beta cn l
-                                 in match on with
-                                      | Some cn' => Some (cm ○ cn')
-                                      | None     => None
-                                    end
-                end
-         end
-    | ⌊_⌋ => None
-  end.
-
-(* -------------------------------------------------------------------- *)
-(* Lemma: ephemeral expansion coincides with multiple-step normal order *)
-
-Fixpoint times_opt {A : Type} (n : nat) (f : A -> option A) (a : A)
-: option A :=
-  match n with
-    | O    => Some a
-    | S n' => let oa := f a
-              in match oa with
-                   | Some a' => times_opt n' f a'
-                   | None    => None
-                 end
-  end.
-
-Lemma eph_mult_nor :
-  forall (c : closure) (l : nat), exists (n : nat),
-    times_opt n (fun c => clos_nor c 0) c = Some (nor_eph_exp c l).
-Proof.
-  admit.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-(* Theorem: reduction commutes with sigmac *)
-
-Definition map_option {A B : Type} (f : A -> B) (o : option A) : option B :=
-  match o with
-    | Some x => Some (f x)
-    | None   => None
-  end.
-
-Theorem red_comm_sc :
-  forall (t : term),
-    map_option (fun c => sc c 0) (nor_beta (nor_eph_exp (ξ [[::]] t) 0) 0) =
-    map_option closure_of_term (nor t).
-
 
 (*
 *** Local Variables: ***
-*** coq-load-path: ("ALEA" "ssreflect" ".") ***
+*** coq-load-path: ("ssreflect" ".") ***
 *** End: ***
  *)
