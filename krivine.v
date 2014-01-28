@@ -708,7 +708,7 @@ Proof.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma L3_8_2_r:
+Lemma L1_r:
   forall c,
     forall N ρ l0 l k0 k m, c = ξ [ρ] N -> l >= l0 -> wf ρ l0 ->
           σc (ξ [μ (l+k0+m) k ++ ρ] N) (l+k0+k+m)
@@ -747,11 +747,56 @@ Proof.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma L3_8_2 T ρ l m: wf ρ l ->
+Lemma L1 T ρ l m: wf ρ l ->
   σc (ξ [ρ] T) (l + m) = ↑[0,m] (σc (ξ [ρ] T) l) :> term.
 Proof.
-  move=> wfρl; move: (@L3_8_2_r (ξ [ρ] T) T ρ l l 0 0 m).
+  move=> wfρl; move: (@L1_r (ξ [ρ] T) T ρ l l 0 0 m).
   by rewrite !(addn0, add0n) /= => ->.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma L2:
+  forall c,
+    (forall T ρ S l l0 m k, c = ξ [ρ] T -> l >= l0 -> wf ρ l0 ->
+         σc (ξ [μ (l+m) k ++ ρ] T) (l+m+k)
+       = (σc (ξ [μ (l+m+1) k ++ ρ] T) (l+m+k+1))[! m+k ← S] :> term).
+Proof.
+  elim/clind=> // t ρ IH T ρ' S l l0 m k [_ <-] {t ρ'}; elim: T l l0 m k.
+  + move=> n l l0 m k le_l0_l wf_ρ_l0 /=; rewrite ![sc (ξ [_] _) _]scE.
+    rewrite !size_cat !size_μ; case: ltnP=> [lt_n_kDρ|].
+    * rewrite !nth_cat !size_μ; case: ltnP => [lt_nk|le_kn].
+      - rewrite !nth_μ // !scE !c2tE /= [_+1]addnAC.
+        by rewrite !subKn ?ltn_addl // ltnW // ltn_addl.
+      - set c := nth _ _ _; have cρ: c \in ρ.
+          by rewrite mem_nth // -subSn // leq_subLR.
+        case: (mem_wf wf_ρ_l0 cρ).
+        + case=> i -> le_i_l0; rewrite !scE !c2tE /=.
+          have {-4}->: l+m+k+1 - i = m+k + (l-i).+1.
+            have le_i_l := leq_trans le_i_l0 le_l0_l.
+            rewrite addn1 -!addSn [_+m]addnC [_+k]addnAC.
+            by rewrite -addnBA ?subSn // ltnW.
+          rewrite -ltn_subRL subnn /= -[X in _==X]addn0.
+          rewrite eqn_add2l /= addn1 subSn //.
+          by rewrite (@leq_trans l0) // -[l0]addn0 -addnA leq_add.
+        + case=> [T] [ρ'] [l'] [cE wf_ρ'_l' le_l'_l0].
+          have le_l'_l := leq_trans le_l'_l0 le_l0_l.
+          have /= := (IH _ cρ _ _ S _ _ (m+k) 0 cE le_l'_l wf_ρ'_l').
+          by rewrite -cE !(addn0, add0n) !addnA.
+    * move=> le_kDρ_n; rewrite !c2tE /=.
+      have h z: n + z - (k + size ρ) = (n - (k + size ρ)) + z.
+        by rewrite [n+z]addnC -addnBA // [z+_]addnC.
+      rewrite !h; have ->: l+m+k+1 = l.+1 + (m+k).
+         by rewrite addn1 addSn !addnA.
+      rewrite !addnA ltnNge leq_add2r -{2}[m]add0n leq_add2r.
+      rewrite {1}addnS /= eqn_add2r -{3}[m]add0n eqn_add2r.
+      by rewrite {1}addnS /= !(addnS, addSn).
+  + move=> t IHt u IHu l l0 m k le_l0_l wf_ρ_l0.
+    rewrite ![_ (σc (ξ [_] _) _)]scE ![sc (_ ○ _) _]scE !c2tE /=.
+    by rewrite (IHt _ l0) // (IHu _ l0).
+  + move=> t IHt l l0 m k le_l0_l wf_ρ_l0.
+    rewrite ![_ (σc (ξ [_] _) _)]scE ![sc (λλ [_]) _]scE !c2tE /=.
+    rewrite -cat_cons -μS -addnS (IHt _ l0) // addnS; congr (λ [_ [! _ ← _]]).
+    by rewrite {1}[(_+k)+1]addnAC -cat_cons -μS !addn1 addnS.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -772,7 +817,7 @@ Proof.
       - rewrite leq_eqVlt; case/orP => [/eqP->|].
         + rewrite !nth_cat !size_μ ltnn subnn /= [sc ^_ _]scE c2tE /=.
           rewrite addn1 -addSn -[X in l.+1 + n - X]addn0 subnDl subn0.
-          rewrite ltnn eqxx; move: (@L3_8_2_r (ξ [ρ] N) N ρ l0 l 0 0 n).
+          rewrite ltnn eqxx; move: (@L1_r (ξ [ρ] N) N ρ l0 l 0 0 n).
           by rewrite !(addn0, add0n) /= => -> //; inversion wfρ.
         + case: n lt_n_mDSρ => // n; rewrite addnS ltnS.          
           move=> lt_n_mDρ lt_m_Sn; rewrite !nth_cat !size_μ ltnNge ltnW //=.
@@ -811,3 +856,9 @@ Proof.
   move=> B ρ N l wf; move: (@L3_8_3_r (ξ [ρ] B) B ρ N l l 0).
   by rewrite !(addn0, add0n) /= -addn1 => ->.
 Qed.
+
+(*
+*** Local Variables: ***
+*** coq-load-path: ("ssreflect" ".") ***
+*** End: ***
+ *)
