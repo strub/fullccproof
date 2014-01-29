@@ -572,7 +572,7 @@ Section SecE.
         by rewrite unlock.
       by rewrite !scCE /=.
   Qed.
-End SecE.  
+End SecE.
 
 (* -------------------------------------------------------------------- *)
 Lemma sc_is_ephemeral c l: is_ephemeral (sc c l).
@@ -819,7 +819,7 @@ Proof.
           rewrite addn1 -addSn -[X in l.+1 + n - X]addn0 subnDl subn0.
           rewrite ltnn eqxx; move: (@L1_r (ξ [ρ] N) N ρ l0 l 0 0 n).
           by rewrite !(addn0, add0n) /= => -> //; inversion wfρ.
-        + case: n lt_n_mDSρ => // n; rewrite addnS ltnS.          
+        + case: n lt_n_mDSρ => // n; rewrite addnS ltnS.
           move=> lt_n_mDρ lt_m_Sn; rewrite !nth_cat !size_μ ltnNge ltnW //=.
           rewrite subSn //=; set c := nth _ _ _; have cρ: c \in ρ.
             by rewrite mem_nth // -subSn // leq_subLR.
@@ -828,7 +828,7 @@ Proof.
             have ->: l + m + 1 - i = m.+1 + (l - i).
               by rewrite addn1 -addnS addnC addnBA // (@leq_trans l0).
             rewrite ltnNge ltnW ?ltn_addr //= addSnnS.
-            rewrite -[X in _==X]addn0 eqn_add2l /=. 
+            rewrite -[X in _==X]addn0 eqn_add2l /=.
             by rewrite addnC -addnBA // (@leq_trans l0).
           - case=> [T] [ρ'] [l'] [cE wf_ρ'_l' le_l'_l0]; rewrite cE.
             have le_l'_l := leq_trans le_l'_l0 le_l0_l; set S := sc _ l.
