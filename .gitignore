@@ -8,3 +8,6 @@
 *.glob
 
 Makefile.coq
+
+/attic
+/*.tar.*
