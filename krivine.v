@@ -800,7 +800,7 @@ Proof.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma L3_8_3_r:
+Lemma L3_r:
   forall c,
     (forall B ρ N l0 l m, c = ξ [ρ] B -> l >= l0 -> wf (ξ [ρ] N :: ρ) l0 ->
           σc (ξ [μ l m ++ (ξ [ρ] N) :: ρ] B) (l+m)
@@ -831,7 +831,9 @@ Proof.
             rewrite -[X in _==X]addn0 eqn_add2l /=. 
             by rewrite addnC -addnBA // (@leq_trans l0).
           - case=> [T] [ρ'] [l'] [cE wf_ρ'_l' le_l'_l0]; rewrite cE.
-            admit.
+            have le_l'_l := leq_trans le_l'_l0 le_l0_l; set S := sc _ l.
+            have /= := (@L2 _ _ _ S _ _ m 0 cE le_l'_l wf_ρ'_l').
+            by rewrite !(addn0, add0n).
      * move=> le_mDSρ_n; set q := n - (m + (size ρ).+1).
        have h: forall h, n + h - (m + (size ρ).+1) = q + h.
          by move=> h; rewrite addnC -addnBA // addnC.
@@ -848,12 +850,12 @@ Proof.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma L3_8_3:
+Lemma L3:
   forall B ρ N l, wf (ξ [ρ] N :: ρ) l ->
       σc (ξ [ξ [ρ] N :: ρ] B) l
     = (σc (ξ [^l.+1 :: ρ] B) l.+1)[! 0 ← σc (ξ [ρ] N) l] :> term.
 Proof.
-  move=> B ρ N l wf; move: (@L3_8_3_r (ξ [ρ] B) B ρ N l l 0).
+  move=> B ρ N l wf; move: (@L3_r (ξ [ρ] B) B ρ N l l 0).
   by rewrite !(addn0, add0n) /= -addn1 => ->.
 Qed.
 
