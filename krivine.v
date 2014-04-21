@@ -203,14 +203,6 @@ Proof.                          (* FIXME: refactor using `curry' *)
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Fixpoint height (t : term) : nat :=
-  match t with
-  | #(_)    => 0
-  | t1 · t2 => maxn (height t1) (height t2)
-  | λ [t]   => (height t).+1
-  end.
-
-(* -------------------------------------------------------------------- *)
 Reserved Notation "↑ t"           (at level 0, format "↑ t").
 Reserved Notation "↑ [ k ] t"     (at level 0, format "↑ [ k ] t").
 Reserved Notation "↑ [ k , n ] t" (at level 0, format "↑ [ k , n ] t").
@@ -399,84 +391,6 @@ Lemma term_of_ephemeralK: cancel term_of_ephemeral ephemeral_of_term.
 Proof.
   case=> t Et; rewrite /ephemeral_of_term; apply/eqP.
   by rewrite eqE /= term_of_closureK.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-Module HeightI.
-  Fixpoint h (c : closure) : nat :=
-    match c with
-    | ⌊_⌋      => 0
-    | ^(_)     => 0
-    | λλ [c]   => (h c).+1
-    | c1 ○ c2  => (maxn (h c1) (h c2)).+1
-    | ξ [cs] t =>
-        let fix ht t hs k {struct t} :=
-          match t with
-          | #i      => if i < k then 1 else nth 0hs (i-k)
-          | λ [t]   => (ht t hs k.+1).+1
-          | t1 · t2 => (maxn (ht t1 hs k) (ht t2 hs k)).+1
-          end
-        in
-          ht t [seq (h c).+1 | c <- cs] 0
-    end.
-End HeightI.
-
-(* -------------------------------------------------------------------- *)
-Module Type HeightSig.
-  Parameter h  : closure -> nat.
-  Parameter hE : h = HeightI.h.
-End HeightSig.
-
-Module Height : HeightSig.
-  Definition h := HeightI.h.
-
-  Lemma hE : h = HeightI.h.
-  Proof. by []. Qed.
-End Height.
-
-Notation h := Height.h.
-Canonical h_unlock := Unlockable Height.hE.
-
-(* -------------------------------------------------------------------- *)
-Fixpoint ht t hs k :=
-  match t with
-  | #i      => if i < k then 1 else (nth 0 hs (i-k))
-  | λ [t]   => (ht t hs k.+1).+1
-  | t1 · t2 => (maxn (ht t1 hs k) (ht t2 hs k)).+1
-  end.
-
-Lemma hE: forall c,
-  h c = match c with
-        | ^n               => 0
-        | ⌊n⌋              => 0
-        | λλ [c]           => (h c).+1
-        | c1 ○ c2          => (maxn (h c1) (h c2)).+1
-        | ξ [cs] #n        => nth 0 [seq (h c).+1 | c <- cs] n
-        | ξ [cs] (λ [t])   => (h (ξ [^0 :: cs] t)).+1
-        | ξ [cs] (t1 · t2) => (maxn (h (ξ [cs] t1)) (h (ξ [cs] t2))).+1
-        end.
-Proof.
-  have CE cs t: h (ξ [cs] t) = ht t [seq (h c).+1 | c <- cs] 0.
-    by rewrite unlock /=.
-  case=> [|n|n|c1 c2|c]; try by rewrite unlock.
-  have htE t hs k: ht t hs k = ht t ((nseq k 1) ++ hs) 0.
-    elim: t hs k => [n|t1 IH1 t2 IH2|t IH] hs k //=.
-    + rewrite nth_cat subn0 size_nseq; case: ltnP=> //.
-      by rewrite nth_nseq => ->.
-    + by rewrite IH1 IH2.
-    + by rewrite IH [X in _=X.+1]IH.
-  have nseqhE i cs:
-      [seq (h c).+1 | c <- (nseq i ^0) ++ cs]
-    = (nseq i 1 ++ [seq (h c).+1 | c <- cs]).
-    by rewrite map_cat map_nseq unlock.
-  move=> t cs; rewrite CE; have: cs = (nseq 0 ^0) ++ cs by [].
-  set i := {1}0; move=> csE; rewrite -{1}/i {-1}csE => {csE}.
-  elim: t i => [n|t1 IH1 t2 IH2|t IH] i //=.
-  + rewrite map_cat nth_cat size_map size_nseq; case: ltnP=> //.
-    move=> lt_ni; rewrite (nth_map ^0) ?size_nseq //.
-    by rewrite nth_nseq lt_ni unlock.
-  + by rewrite !CE; congr (maxn _ _).+1; rewrite htE nseqhE.
-  + by rewrite CE htE -nseqhE.
 Qed.
 
 (* -------------------------------------------------------------------- *)
