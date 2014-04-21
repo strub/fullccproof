@@ -1,5 +1,6 @@
 (* -------------------------------------------------------------------- *)
 Require Import ssreflect eqtype ssrbool ssrnat ssrfun seq.
+Require Import Relation_Operators.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -94,113 +95,6 @@ Qed.
 
 Lemma crK t: curry ((curry t).1 ·! (curry t).2) = curry t.
 Proof. by rewrite crcr ?crNapp //; case: (curry t). Qed.
-
-(* -------------------------------------------------------------------- *)
-Definition neutral (t : term) : bool :=
-  if t is λ [_] then false else true.
-
-Definition xneutral (t : term) : bool :=
-  neutral (curry t).1.
-
-(* -------------------------------------------------------------------- *)
-Lemma xneutralP (t : term):
-  reflect (exists x ts, t = #x ·! ts) (xneutral t).
-Proof.
-  apply: (iffP idP); last first.
-    by case=> [x] [ts] ->; rewrite /xneutral crcr.
-  rewrite /xneutral -{2}[t]curryE; case h: (curry t).1 => [x|u1 u2|u] //= _.
-  + by exists x; exists (curry t).2.
-  + by move/(congr1 isapp): h; rewrite (negbTE (crNapp _)).
-Qed.
-
-(* -------------------------------------------------------------------- *)
-Definition iswhnf (t : term) : bool :=
-  match curry t with
-  | (#(_) , _   ) => true
-  | (λ [_], [::]) => true
-  | (_    , _   ) => false
-  end.
-
-(* -------------------------------------------------------------------- *)
-Inductive IsWhnf : term -> Prop :=
-| IsWhnfLam : forall t, IsWhnf (λ [t])
-| IsWhnfVar : forall x ts, IsWhnf (#x ·! ts).
-
-(* -------------------------------------------------------------------- *)
-Lemma iswhnfP (t : term): reflect (IsWhnf t) (iswhnf t).
-Proof.
-  apply: (iffP idP).
-  * rewrite /iswhnf; case h: (curry t) => [ht a].
-    rewrite -[t]curryE; case: ht h => [x|u1 u2|u] -> //=.
-    + by move=> _; apply: IsWhnfVar.
-    + by case: a => [/=|v vs //] _; constructor.
-  * by elim=> //= x ts; rewrite /iswhnf crcr.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-Fixpoint isnf_r (b : bool) (t : term) : bool :=
-  match t with
-  | λ [t]   => b && (isnf_r true t)
-  | #(_)    => true
-  | u1 · u2 => (isnf_r false u1) && (isnf_r true u2)
-  end.
-
-Definition isnf := fun t => isnf_r true t.
-
-(* -------------------------------------------------------------------- *)
-Inductive IsNf : term -> Prop :=
-| IsNfLam : forall t, IsNf t -> IsNf (λ [t])
-| IsNfVar : forall x ts, (forall t, t \in ts -> IsNf t) -> IsNf (#x ·! ts).
-
-(* -------------------------------------------------------------------- *)
-Derive Inversion IsNf_appI with
-  (forall t u, IsNf (t · u)) Sort Prop.
-
-Derive Inversion IsNf_appI_r with
-  (forall t, IsNf (λ [t])) Sort Prop.
-
-Lemma IsNf_lamI t (P : term -> Prop):
-     (IsNf (λ [t]) -> forall u, IsNf t -> u = t -> P t)
-  -> IsNf (λ [t]) -> P t.
-Proof.
-  move=> h; inversion 1 using IsNf_appI_r; first exact: h.
-  move=> _ x ts _; elim/last_ind: ts => [|u ts _] //.
-  by rewrite AppS_rcons.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-Lemma isnfP: forall t, reflect (IsNf t) (isnf t).
-Proof.                          (* FIXME: refactor using `curry' *)
-  pose IsNfI t := exists n ts, (forall u, u \in ts -> IsNf u) /\ t = #n ·! ts.
-
-  have h t b: reflect (if b then IsNf t else IsNfI t) (isnf_r b t).
-  + elim: t b => [x|t IHt u IHu|t IHt] b /=; try constructor.
-    * by case: b; [apply (@IsNfVar _ [::]) | exists x; exists [::]].
-    * case: b IHt IHu => /(_ false) IHt /(_ true) IHu; apply: (iffP idP).
-      - case/andP=> /IHt [x [ts [NFts ->]]] /IHu NFu.
-        rewrite -AppS_rcons; apply: (@IsNfVar x (rcons ts u)).
-        by move=> v; rewrite mem_rcons in_cons => /orP [/eqP->|/NFts].
-      - inversion 1 using IsNf_appI=> _ x; elim/last_ind => [//|ts v _].
-        move=> NFts; rewrite AppS_rcons=> [[tsE vE]]; apply/andP; split.
-        + apply/IHt; rewrite -tsE; exists x; exists ts; split=> // w w_in_ts.
-          by apply: NFts; rewrite mem_rcons in_cons w_in_ts orbT.
-        + by apply/IHu; apply NFts; rewrite mem_rcons vE in_cons eqxx.
-      - case/andP => /IHt [x [ts [NFts ->]]] /IHu NFu.
-        exists x; exists (rcons ts u); rewrite -AppS_rcons; split=> //.
-        by move=> v; rewrite mem_rcons in_cons => /orP [/eqP->|/NFts].
-      - case=> [x] []; elim/last_ind => [[//]|ts v _] [NFts].
-        rewrite AppS_rcons=> [[tsE uE]]; apply/andP; split.
-        + apply/IHt; exists x; exists ts; rewrite tsE; split=> // w w_in_ts.
-          by apply: NFts; rewrite mem_rcons in_cons w_in_ts orbT.
-        + by apply/IHu; apply: NFts; rewrite mem_rcons in_cons uE eqxx.
-    * case: b IHt => /=; last first.
-        constructor=> [[x] []]; elim/last_ind=> [|v ts _] [_] //.
-        by rewrite AppS_rcons.
-      move/(_ true)=> IH; apply: (iffP idP).
-      - by move/IH=> NFt; constructor.
-      - by inversion 1 using IsNf_lamI => _ _ NFt _; apply/IH.
-  by move=> t; move: (h t true).
-Qed.
 
 (* -------------------------------------------------------------------- *)
 Reserved Notation "↑ t"           (at level 0, format "↑ t").
@@ -334,6 +228,13 @@ Fixpoint is_ephemeral c :=
   | c1 ○ c2 => [&& is_ephemeral c1 & is_ephemeral c2]
   | _       => false
   end.
+
+(* -------------------------------------------------------------------- *)
+Reserved Notation "c ○! cs" (at level 16, left associativity, format "c  ○!  cs").
+
+Definition CAppS c := foldl CApp c.
+
+Notation "c ○! cs" := (CAppS c cs).
 
 (* -------------------------------------------------------------------- *)
 Fixpoint closure_of_term (t : term) : closure :=
@@ -772,6 +673,174 @@ Proof.
   move=> B ρ N l wf; move: (@L3_r (ξ [ρ] B) B ρ N l l 0).
   by rewrite !(addn0, add0n) /= -addn1 => ->.
 Qed.
+
+(* ==================================================================== *)
+(*                           Commutation                                *)
+(* ==================================================================== *)
+
+(* -------------------------------------------------------------------- *)
+Definition IsNeutral (t : term) :=
+  if t is λ [_] then false else true.
+
+(* -------------------------------------------------------------------- *)
+Inductive IsWhnf : term -> Prop :=
+| IsWhnfLam : forall t, IsWhnf (λ [t])
+| IsWhnfVar : forall x ts, IsWhnf (#x ·! ts).
+
+(* -------------------------------------------------------------------- *)
+Inductive IsNf : term -> Prop :=
+| IsNfLam : forall t, IsNf t -> IsNf (λ [t])
+| IsNfVar : forall x ts, (forall t, t \in ts -> IsNf t) -> IsNf (#x ·! ts).
+
+(* -------------------------------------------------------------------- *)
+Reserved Notation "t1 ⇀ t2"   (at level 60, no associativity, format "t1  ⇀  t2").
+Reserved Notation "t1 ⇀_β t2" (at level 60, no associativity, format "t1  ⇀_β  t2").
+Reserved Notation "t1 → t2"   (at level 60, no associativity, format "t1  →  t2").
+
+(* -------------------------------------------------------------------- *)
+Section NoCtxt.
+  Variable R : term -> term -> Prop.
+
+  Inductive NoRed : term -> term -> Prop :=
+  | NoBase: forall t1 t2,
+      R t1 t2 -> t1 ⇀ t2
+
+  | Noμ1: forall t1 t1' t2,
+      ~ IsWhnf t1 -> (t1 ⇀ t1')
+    -> (t1 · t2 ⇀ t1' · t2)
+
+  | Noμ2: forall t1 t1' t2,
+      IsWhnf t1 -> ~ IsNeutral t1 -> (t1 ⇀ t1')
+    -> (t1 · t2 ⇀ t1' · t2)
+
+  | Noν: forall t1 t2 t2',
+      IsNf t1 -> (t2 ⇀ t2') -> (t1 · t2 ⇀ t1 · t2')
+
+  | Noξ: forall t t', (t ⇀ t') -> (λ [t] ⇀ λ [t'])
+
+  where "t1 ⇀ t2" := (NoRed t1 t2).  
+End NoCtxt.
+
+(* -------------------------------------------------------------------- *)
+Inductive BetaRed1 : term -> term -> Prop :=
+| Beta: forall t u, (λ [t] · u) ⇀_β t[!0 ← u]
+
+where "t ⇀_β u" := (BetaRed1 t u).
+
+Definition BetaRed := NoRed BetaRed1.
+
+Notation "t → u" := (BetaRed t u).
+
+(* -------------------------------------------------------------------- *)
+Definition IsNeutralC (c : closure) :=
+  if c is λλ [_] then false else true.
+
+(* -------------------------------------------------------------------- *)
+Inductive IsWhnfC : closure -> Prop :=
+| IsWhnfCLam : forall t ρ, IsWhnfC (λλ [ξ [ρ] t])
+| IsWhnfCVar : forall n cs, IsWhnfC (⌊n⌋ ○! cs).
+
+(* -------------------------------------------------------------------- *)
+Inductive IsNfC : closure -> Prop :=
+| IsNfCLam : forall c, IsNfC c -> IsNfC (λλ [c])
+| IsNfCVar : forall n cs, (forall c, c \in cs -> IsNfC c) -> IsNfC (⌊n⌋ ○! cs).
+
+(* -------------------------------------------------------------------- *)
+Reserved Notation "t ⇀_[ l ] u" (at level 60, no associativity, format "t  ⇀_[ l ]  u").
+Reserved Notation "t ⇀_[ 'ρ' , l ] u" (at level 60, no associativity, format "t  ⇀_[ 'ρ' , l ]  u").
+Reserved Notation "t ⇀_[ 'β' , l ] u" (at level 60, no associativity, format "t  ⇀_[ 'β' , l ]  u").
+Reserved Notation "t →_[ 'ρ' , l ] u" (at level 60, no associativity, format "t  →_[ 'ρ' , l ]  u").
+Reserved Notation "t →_[ 'β' , l ] u" (at level 60, no associativity, format "t  →_[ 'β' , l ]  u").
+Reserved Notation "t →*_[ 'ρ' , l ] u" (at level 60, no associativity, format "t  →*_[ 'ρ' , l ]  u").
+Reserved Notation "t →*_[ 'β' , l ] u" (at level 60, no associativity, format "t  →*_[ 'β' , l ]  u").
+
+(* -------------------------------------------------------------------- *)
+Section NoCCtxt.
+  Variable R : nat -> closure -> closure -> Prop.
+
+  Inductive NoCRed : nat -> closure -> closure -> Prop :=
+  | NoCBase: forall l c1 c2, 
+
+                    R l c1 c2
+      (* ————————————————————————————————– *)
+       ->          c1 ⇀_[l] c2
+
+  | NoCμ1: forall l c1 c1' c2, ~IsWhnfC c1 ->
+
+                  c1 ⇀_[l] c2
+      (* ————————————————————————————————– *)
+      ->    (c1 ○ c2) ⇀_[l] (c1' ○ c2)
+
+  | NoCμ2: forall l c1 c1' c2, IsWhnfC c1 -> ~ IsNeutralC c1 ->
+
+                  c1 ⇀_[l] c1'
+      (* ————————————————————————————————– *)
+      ->    (c1 ○ c2) ⇀_[l] (c1' ○ c2)
+
+  | NoCν: forall l c1 c2 c2', IsNfC c1 -> ~ IsNeutralC c1 ->
+
+                   c2 ⇀_[l] c2'
+      (* ————————————————————————————————– *)
+      ->    (c1 ○ c2) ⇀_[l] (c1 ○ c2')
+
+  | NoCξ: forall l c c',
+
+                   c ⇀_[l.+1] c'
+      (* ————————————————————————————————– *)
+      ->     (λλ [c]) ⇀_[l] (λλ [c])
+  
+  where "c1 ⇀_[ l ] c2" := (NoCRed l c1 c2).
+End NoCCtxt.
+
+(* -------------------------------------------------------------------- *)
+Inductive RhoRed1 : nat -> closure -> closure -> Prop :=
+| RhoRedVar: forall l n ρ, n < size ρ ->
+    (ξ [ρ] #n) ⇀_[ρ,l] nth ^0 ρ n
+
+| RhoRedFree: forall l n ρ, n >= size ρ ->
+    (ξ [ρ] #n) ⇀_[ρ,l] ⌊n - (size ρ - l)⌋
+
+| RhoRedApp: forall l t u ρ,
+    (ξ [ρ] (t · u)) ⇀_[ρ,l] (ξ [ρ] t) ○ (ξ [ρ] u)
+
+| RhoRedLam: forall l t ρ,
+    (ξ [ρ] (λ [t])) ⇀_[ρ,l] λλ [ξ [^l.+1 :: ρ] t]
+
+where "c1 ⇀_[ 'ρ' , l ] c2" := (RhoRed1 l c1 c2).
+
+Definition RhoRed := NoCRed RhoRed1.
+
+Notation "c1 →_[ 'ρ' , l ] c2" := (RhoRed l c1 c2).
+Notation "c1 →*_[ 'ρ' , l ] c2" := (clos_refl_trans _ (RhoRed l) c1 c2).
+
+(* -------------------------------------------------------------------- *)
+Inductive TBetaRed1 : nat -> closure -> closure -> Prop :=
+| TBeta: forall l t u ρ,
+              (λλ [ξ[^l.+1 :: ρ] t]) ○ (ξ [ρ] u)
+    ⇀_[β, l] (ξ [ξ [ρ] u :: ρ] t)
+
+where "c1 ⇀_[ 'β' , l ] c2" := (TBetaRed1 l c1 c2).
+
+Definition TBetaRed := NoCRed TBetaRed1.
+
+Notation "c1 →_[ 'β' , l ] c2" := (TBetaRed l c1 c2).
+Notation "c1 →*_[ 'β' , l ] c2" := (clos_refl_trans _ (TBetaRed l) c1 c2).
+
+(* -------------------------------------------------------------------- *)
+Reserved Notation "t →_[ 'σ' , l ] u" (at level 60, no associativity, format "t  →_[ 'σ' , l ]  u").
+Reserved Notation "t →*_[ 'σ' , l ] u" (at level 60, no associativity, format "t  →*_[ 'σ' , l ]  u").
+
+Definition SigmaRed (l : nat) (c1 c2 : closure) := c2 = sc c1 l.
+
+Notation "c1 →_[ 'σ' , l ] c2" := (SigmaRed l c1 c2).
+Notation "c1 →*_[ 'σ' , l ] c2" := (clos_refl_trans _ (SigmaRed l) c1 c2).
+
+(* -------------------------------------------------------------------- *)
+Theorem commute (M : closure) (E E' : ephemeral) (l n : nat):
+     M →*_[σ, l] E
+  -> E → E'
+  -> exists X M', M →*_[ρ, l] X /\ X  →_[β, l] M'.
+Proof. Admitted.
 
 (*
 *** Local Variables: ***
