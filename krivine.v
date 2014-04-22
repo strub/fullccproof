@@ -705,16 +705,17 @@ Section NoCtxt.
   | NoBase: forall t1 t2,
       R t1 t2 -> t1 ⇀ t2
 
-  | Noμ1: forall t1 t1' t2,
-      ~ IsWhnf t1 -> (t1 ⇀ t1')
+  | Noμ1: forall t1 t1' t2, ~ IsWhnf t1
+    -> (t1 ⇀ t1')
     -> (t1 · t2 ⇀ t1' · t2)
 
-  | Noμ2: forall t1 t1' t2,
-      IsWhnf t1 -> ~ IsNeutral t1 -> (t1 ⇀ t1')
+  | Noμ2: forall t1 t1' t2, IsWhnf t1 -> IsNeutral t1
+    -> (t1 ⇀ t1')
     -> (t1 · t2 ⇀ t1' · t2)
 
-  | Noν: forall t1 t2 t2',
-      IsNf t1 -> (t2 ⇀ t2') -> (t1 · t2 ⇀ t1 · t2')
+  | Noν: forall t1 t2 t2', IsNf t1 -> IsNeutral t1
+    -> (t2 ⇀ t2')
+    -> (t1 · t2 ⇀ t1 · t2')
 
   | Noξ: forall t t', (t ⇀ t') -> (λ [t] ⇀ λ [t'])
 
@@ -771,13 +772,13 @@ Section NoCCtxt.
       (* ————————————————————————————————– *)
       ->    (c1 ○ c2) ⇀_[l] (c1' ○ c2)
 
-  | NoCμ2: forall l c1 c1' c2, IsWhnfC c1 -> ~ IsNeutralC c1 ->
+  | NoCμ2: forall l c1 c1' c2, IsWhnfC c1 -> IsNeutralC c1 ->
 
                   c1 ⇀_[l] c1'
       (* ————————————————————————————————– *)
       ->    (c1 ○ c2) ⇀_[l] (c1' ○ c2)
 
-  | NoCν: forall l c1 c2 c2', IsNfC c1 -> ~ IsNeutralC c1 ->
+  | NoCν: forall l c1 c2 c2', IsNfC c1 -> IsNeutralC c1 ->
 
                    c2 ⇀_[l] c2'
       (* ————————————————————————————————– *)
@@ -805,6 +806,9 @@ Inductive RhoRed1 : nat -> closure -> closure -> Prop :=
 
 | RhoRedLam: forall l t ρ,
     (ξ [ρ] (λ [t])) ⇀_[ρ,l] λλ [ξ [^l.+1 :: ρ] t]
+
+| RhoRedPar: forall l n,
+    ^n ⇀_[ρ,l] ⌊l-n⌋
 
 where "c1 ⇀_[ 'ρ' , l ] c2" := (RhoRed1 l c1 c2).
 
@@ -839,7 +843,7 @@ Notation "c1 →*_[ 'σ' , l ] c2" := (clos_refl_trans _ (SigmaRed l) c1 c2).
 Theorem commute (M : closure) (E E' : ephemeral) (l n : nat):
      M →*_[σ, l] E
   -> E → E'
-  -> exists X M', M →*_[ρ, l] X /\ X  →_[β, l] M'.
+  -> exists X M', M →*_[ρ, l] X /\ X  →_[β, l] M' /\ M' →*_[σ, l] E'.
 Proof. Admitted.
 
 (*
