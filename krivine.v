@@ -1,10 +1,19 @@
 (* -------------------------------------------------------------------- *)
-Require Import ssreflect eqtype ssrbool ssrnat ssrfun seq.
+From mathcomp Require Import all_ssreflect.
 Require Import Relation_Operators.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
+
+(* -------------------------------------------------------------------- *)
+Tactic Notation "rev" "/" constr(x) ":" hyp(h) :=
+  inversion h using x.
+
+Tactic Notation "rev" "/" constr(x) :=
+  let h := fresh "h" in move=> h; rev/x: h => {h}.
+
+Ltac ctor := constructor.
 
 (* -------------------------------------------------------------------- *)
 Lemma pairE (T U : Type) (xy : T * U): (xy.1, xy.2) = xy.
@@ -54,7 +63,7 @@ Definition term_eqMixin := EqMixin term_eqP.
 Canonical term_eqType := EqType term term_eqMixin.
 
 (* -------------------------------------------------------------------- *)
-Reserved Notation "t ·! u" (at level 16, left associativity, format "t  ·!  u").
+Reserved Notation "t ·! u" (at level 40, left associativity, format "t  ·!  u").
 
 Definition AppS t := foldl App t.
 
@@ -63,9 +72,11 @@ Notation "t ·! u" := (AppS t u).
 Lemma AppS_cons t u us: t ·! (u :: us) = (t · u) ·! us.
 Proof. by []. Qed.
 
-
 Lemma AppS_rcons t u us: t ·! (rcons us u) = (t ·! us) · u.
 Proof. by rewrite -cats1 /AppS foldl_cat. Qed.
+
+Lemma AppS_cat t ts us : t ·! (ts ++ us) = t ·! ts ·! us.
+Proof. by elim: ts t us => /=. Qed.
 
 (* -------------------------------------------------------------------- *)
 Fixpoint curry (t : term) :=
@@ -221,6 +232,26 @@ Section ClosureInd.
   Qed.
 End ClosureInd.
 
+(* -------------------------------------------------------------------- *)
+Fixpoint h (c : closure) :=
+  match c with
+  | ^n      => 0%N
+  | ⌊n⌋     => 0%N
+  | c1 ○ c2 => (maxn (h c1) (h c2)).+1
+  | λλ [c]  => (h c).+1
+  | ξ [ρ] t =>
+      let fix ht (t : term) := nosimpl (
+        match t with
+        | λ [t']  => (ht t').+1
+        | t1 · t2 => (maxn (ht t1) (ht t2)).+1
+        | #n      => 
+          let hs := [seq h c | c <- ρ] in
+          if n < size hs then (nth 0 hs n).+1 else 0
+        end)
+      in ht t
+  end.
+
+(* -------------------------------------------------------------------- *)
 Fixpoint is_ephemeral c :=
   match c with
   | ⌊_⌋     => true
@@ -230,11 +261,21 @@ Fixpoint is_ephemeral c :=
   end.
 
 (* -------------------------------------------------------------------- *)
-Reserved Notation "c ○! cs" (at level 16, left associativity, format "c  ○!  cs").
+Reserved Notation "c ○! cs"
+  (at level 40, left associativity, format "c  ○!  cs").
 
 Definition CAppS c := foldl CApp c.
 
 Notation "c ○! cs" := (CAppS c cs).
+
+Lemma CAppS_cons c c' cs: c ○! (c' :: cs) = (c ○ c') ○! cs.
+Proof. by []. Qed.
+
+Lemma CAppS_rcons c c' cs: c ○! (rcons cs c') = (c ○! cs) ○ c'.
+Proof. by rewrite -cats1 /CAppS foldl_cat. Qed.
+
+Lemma CAppS_cat c cs cs' : c ○! (cs ++ cs') = c ○! cs ○! cs'.
+Proof. by elim: cs c cs' => /=. Qed.
 
 (* -------------------------------------------------------------------- *)
 Fixpoint closure_of_term (t : term) : closure :=
@@ -389,6 +430,10 @@ Section SecE.
   Qed.
 End SecE.
 
+Lemma sc_appS l c cs :
+  sc (c ○! cs) l = (sc c l) ○! [seq sc c l | c <- cs].
+Proof. by elim: cs c => //= c' cs ih c; rewrite ih scE. Qed.
+
 (* -------------------------------------------------------------------- *)
 Lemma sc_is_ephemeral c l: is_ephemeral (sc c l).
 Proof.
@@ -428,66 +473,95 @@ Lemma c2tE:
   * (forall c1 c2, c1 ○ c2 = c1 · c2 :> term).
 Proof. by do! split; rewrite /term_of_closure_r -lock. Qed.
 
+Lemma c2t_appS c cs :
+  c ○! cs = (c ·! [seq term_of_closure_r c | c <- cs]) :> term.
+Proof. by elim: cs c => // c' cs ih c; rewrite ih c2tE. Qed.
+
 (* -------------------------------------------------------------------- *)
-Inductive wfc : nat -> seq closure -> nat -> Prop :=
-| WFCEmpty:
-    forall n, wfc 0 [::] n
+Inductive wfr : nat -> seq closure -> nat -> Prop :=
+| WFREmpty:
+    forall n, wfr 0 [::] n
 
-| WFCTerm:
+| WFRTerm:
     forall i t ρt ρ n, i <= n
-     -> wfc i ρt i
-     -> wfc i ρ  n
-     -> wfc i (ξ [ρt] t :: ρ) n
+     -> wfr i ρt i
+     -> wfr i ρ n
+     -> wfr i (ξ [ρt] t :: ρ) n
 
-| WFCFormal:
+| WFRFormal:
     forall i ρ n, i.+1 <= n
-     -> wfc i    ρ n
-     -> wfc i.+1 (^i.+1 :: ρ) n
-.
-Derive Inversion_clear WFCCons with
-  (forall i c ρ n, wfc i (c :: ρ) n) Sort Prop.
+     -> wfr i ρ n
+     -> wfr i.+1 (^i.+1 :: ρ) n
 
-Definition asformal (c : closure) :=
-  if c is ^i then Some i else None.
+| WFRWeak:
+    forall i j ρ n, i <= j -> j <= n
+     -> wfr i ρ n
+     -> wfr j ρ n.
 
-Definition formals (ρ : seq closure) :=
-  pmap asformal ρ.
+Notation wf ρ l := (wfr l ρ l).
 
-Lemma formals_cat (ρ1 ρ2 : seq closure):
-  formals (ρ1 ++ ρ2) = formals ρ1 ++ formals ρ2.
-Proof. by elim: ρ1 => [//|c ρ1 /= ->]; case: (asformal c). Qed.
-
-Lemma wfc_le i ρ n: wfc i ρ n -> i <= n.
-Proof. by elim. Qed.
-
-Lemma wfc_lesz i ρ n: wfc i ρ n -> i <= size ρ.
-Proof. by elim=> //= {i ρ n} i _ _ ρ _ _ _ _ _ ?; rewrite ltnW. Qed.
-
-Lemma wfc_formals i ρ n:
-  wfc i ρ n -> formals ρ = rev (iota 1 i).
+(* -------------------------------------------------------------------- *)
+Lemma wfr_term i ρt t ρ n:
+  wfr i (ξ [ρt] t :: ρ) n ->
+    exists2 j, j <= i & wfr j ρ n.
 Proof.
-  elim=> //= {i ρ n} i ρ n _ _ ->; rewrite -rev_rcons -cat1s -cats1.
-     have ->: [:: 1   ] = (iota 1    1)%N by []; rewrite -iota_add add1n.
-  by have ->: [:: i.+1] = (iota i.+1 1)%N by []; rewrite -iota_add addn1.
+set cs := _ :: _; move: {-2}cs (erefl cs); rewrite {}/cs.
+move=> cs csE wf1; elim: wf1 csE => // {i cs n}.
++ by move=> i t' ρt' ρ' n lt_in h1 _ h2 _ [_ _ <-]; exists i.
++ move=> i j ρ' n le_ij _ wf' ih eq; case: (ih eq).
+  by move=> k le_ki wf1; exists k => //; apply/(leq_trans le_ki).
 Qed.
 
-Lemma wfc_hformal i ρ n: wfc i ρ n -> head 0 (formals ρ) = i.
-Proof. by elim. Qed.
-
-Lemma wfc_cat i ρ1 ρ2 n: wfc i (ρ1 ++ ρ2) n -> wfc (head 0 (formals ρ2)) ρ2 n.
+(* -------------------------------------------------------------------- *)
+Lemma wfr_strg i ρ l l' : l <= l' -> wfr i ρ l -> wfr i ρ l'.
 Proof.
-  elim: ρ1 i => /= [|c ρ ih]; last first.
-    move=> i h; inversion h using WFCCons.
-    * by move=> _ _ _ _ /ih.
-    * by move=> j _ /ih.
-  elim: ρ2 => /= [|c ρ ih] i; first by move=> _; constructor.
-  move=> h; inversion h using WFCCons => /=.
-  + by move=> t ρt le_i_n wfρt wfρ; rewrite (wfc_hformal wfρ); constructor.
-  + by move=> j lt_j_n wfρ; constructor.
+move=> le_ll' wf1; elim: wf1 l' le_ll' => {i ρ l}; try by ctor.
++ move=> i t ρt ρ n lt_in wft iht wf ih l' le_nl'; ctor.
+    by apply/(leq_trans lt_in). by apply/iht. by apply/ih.
++ move=> i ρ n lt_in wfr ih l' le_nl'; ctor.
+    by apply/(leq_trans lt_in). by apply/ih.
++ move=> i j ρ n le_ij le_jn wf ih l' le_nl'.
+  apply/(@WFRWeak i) => //; last by apply/ih.
+  by apply/(leq_trans le_jn).
 Qed.
 
-Notation wf ρ l := (wfc l ρ l).
+(* -------------------------------------------------------------------- *)
+Inductive wfc : nat -> closure -> Prop :=
+| WFCLvl l n :
+    n <= l -> wfc l ^n
 
+| WFCGrd l n :
+    wfc l ⌊n⌋
+
+| WFCApp l c1 c2 :
+    wfc l c1 -> wfc l c2 -> wfc l (c1 ○ c2)
+
+| WFCLam l c :
+    wfc l.+1 c -> wfc l (λλ [c])
+
+| WFCClos l t ρ: wf ρ l -> wfc l (ξ [ρ] t).
+
+(* -------------------------------------------------------------------- *)
+Derive Inversion_clear wfc_lam
+  with (forall l c, wfc l (λλ [c]))
+  Sort Prop.
+
+Derive Inversion_clear wfc_app
+  with (forall l c1 c2, wfc l (c1 ○ c2))
+  Sort Prop.
+
+Derive Inversion_clear wfc_lvl
+  with (forall l n, wfc l ^n)
+  Sort Prop.
+
+Derive Inversion_clear wfc_clos
+  with (forall l ρ t, wfc l (ξ [ρ] t))
+  Sort Prop.
+
+Lemma wfc_appsl l c cs : wfc l (c ○! cs) -> wfc l c.
+Proof. by elim: cs c => //= c1 cs ih c /ih; rev/wfc_app. Qed.
+
+(* -------------------------------------------------------------------- *)
 Definition μ l m := [seq ^i | i <- rev (iota l.+1 m)].
 
 Lemma μS l m: μ l m.+1 = ^(l+m).+1 :: μ l m.
@@ -510,59 +584,58 @@ Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma mem_wf l ρ c: wf ρ l -> c \in ρ ->
-  [\/ exists2 i, c = ^i & i <= l
+  [\/ exists2 i, c = ^i.+1 & i.+1 <= l
     | exists T ρ' l', [/\ c = ξ [ρ'] T, wf ρ' l' & l' <= l]].
 Proof.
-  elim=> //=.
-  + move=> i t pt ρ' n le_in wf_pt IHpt wfρ' IHρ'; rewrite inE.
-    case/orP; [move/eqP=> -> | by move/IHρ'].
-    by right; exists t, pt, i.
-  + move=> i ρ' n lt_in wfρ' IHρ'; rewrite inE.
-    case/orP; [move/eqP=> -> | by move/IHρ'].
-    by left; exists i.+1.
+elim=> //=.
++ move=> i t pt ρ' n le_in wf_pt IHpt wfρ' IHρ'; rewrite inE.
+  case/orP; [move/eqP=> -> | by move/IHρ'].
+  by right; exists t, pt, i.
++ move=> i ρ' n lt_in wfρ' IHρ'; rewrite inE.
+  by case/orP; [move/eqP=> ->; left; exists i | by move/IHρ'].
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma L1_r:
+Lemma L1_r:                     (* Gen. Lemma 6 [in paper] *)
   forall c,
     forall N ρ l0 l k0 k m, c = ξ [ρ] N -> l >= l0 -> wf ρ l0 ->
           σc (ξ [μ (l+k0+m) k ++ ρ] N) (l+k0+k+m)
         = ↑[k+k0,m] (σc (ξ [μ (l+k0) k ++ ρ] N) (l+k0+k)) :> term.
 Proof.
-  elim/clind=> // t ρ IH N ρ' l0 l k0 k m [_ <-] {t ρ'}.
-  elim: N l0 l k0 k m.
-  + move=> n l0 l k0 k m le_l0_l wf_ρ_l0 /=.
-    rewrite scE [X in ↑[_,_] (_ X)]scE !size_cat !size_μ; case: ltnP.
-    * move=> lt_n_kDρ; case: (ltnP n k) => [lt_nk|le_kn].
-      + rewrite !nth_cat !size_μ lt_nk !nth_μ // !scE /=.
-        rewrite [_+m]addnAC !subKn; try by rewrite ltnW // ltn_addl.
-        by rewrite !c2tE /= leqNgt ltn_addr.
-      + rewrite !nth_cat !size_μ ltnNge le_kn /=; set c := nth _ _ _.
-        have cρ: c \in ρ by rewrite mem_nth // -subSn // leq_subLR.
-        case (mem_wf wf_ρ_l0 cρ).
-        - case=> i -> le_i_l0; rewrite !scE !c2tE /=.
-          have le_i_lt := leq_trans le_i_l0 le_l0_l.
-          apply/esym; rewrite {1}[_+k]addnC {1}[l+_]addnC !addnA.
-          rewrite -addnBA 1?leq_addr // addnC addnBA; first by rewrite addnC.
-          by rewrite -addnA -[i]addn0 leq_add.
-        - case=> T [ρ'] [l'] [cE wf_ρ'_l' le_l'_l0]; rewrite cE.
-          have le_l'_l := leq_trans le_l'_l0 le_l0_l.
-          have /= := IH _ cρ _ _ _ _ (k0+k) 0 m cE le_l'_l wf_ρ'_l'.
-          by rewrite !(addn0, add0n, addnA) [k+k0]addnC.
-    * move=> le_kDρ_n; set q := n - (k + size ρ).
-      have h: forall h, n + h - (k + size ρ) = q + h.
-        by move=> h; rewrite addnC -addnBA // addnC.
-      by rewrite !{}h !c2tE /= !addnA [k+k0]addnC leq_add2r leq_addl.
-  + move=> t IHt u IHu l0 l k0 k m le_l0_l wf_ρ_l0 /=.
-    by rewrite 2!scE !c2tE /= (IHt l0) // (IHu l0) // 2!scE c2tE.
-  + move=> t IHt l0 l k0 k m le_l0_l wf_ρ_l0 /=.
-    rewrite 2!scE [_+m]addnAC -cat_cons -!μS !c2tE /=.
-    rewrite -!addnS [_+k.+1]addnAC (IHt l0) //.
-    by rewrite 2!scE c2tE /= -cat_cons -μS -addSn -!addnS.
+elim/clind=> // t ρ IH N ρ' l0 l k0 k m [_ <-] {t ρ'}.
+elim: N l0 l k0 k m.
++ move=> n l0 l k0 k m le_l0_l wf_ρ_l0 /=.
+  rewrite scE [X in ↑[_,_] (_ X)]scE !size_cat !size_μ; case: ltnP.
+  * move=> lt_n_kDρ; case: (ltnP n k) => [lt_nk|le_kn].
+    + rewrite !nth_cat !size_μ lt_nk !nth_μ // !scE /=.
+      rewrite [_+m]addnAC !subKn; try by rewrite ltnW // ltn_addl.
+      by rewrite !c2tE /= leqNgt ltn_addr.
+    + rewrite !nth_cat !size_μ ltnNge le_kn /=; set c := nth _ _ _.
+      have cρ: c \in ρ by rewrite mem_nth // -subSn // leq_subLR.
+      case (mem_wf wf_ρ_l0 cρ).
+      - case=> i -> lt_i_l0; rewrite !scE !c2tE /=.
+        have lt_i_l := leq_trans lt_i_l0 le_l0_l.
+        apply/esym; rewrite {1}[_+k]addnC {1}[l+_]addnC !addnA.
+        rewrite -addnBA 1?leq_addr // addnC addnBA 1?addnC //.
+        by rewrite addnCA; apply/(leq_trans lt_i_l)/leq_addr.
+      - case=> T [ρ'] [l'] [cE wf_ρ'_l' le_l'_l0]; rewrite cE.
+        have le_l'_l := leq_trans le_l'_l0 le_l0_l.
+        have /= := IH _ cρ _ _ _ _ (k0+k) 0 m cE le_l'_l wf_ρ'_l'.
+        by rewrite !(addn0, add0n, addnA) [k+k0]addnC.
+  * move=> le_kDρ_n; set q := n - (k + size ρ).
+    have h: forall h, n + h - (k + size ρ) = q + h.
+      by move=> h; rewrite addnC -addnBA // addnC.
+    by rewrite !{}h !c2tE /= !addnA [k+k0]addnC leq_add2r leq_addl.
++ move=> t IHt u IHu l0 l k0 k m le_l0_l wf_ρ_l0 /=.
+  by rewrite 2!scE !c2tE /= (IHt l0) // (IHu l0) // 2!scE c2tE.
++ move=> t IHt l0 l k0 k m le_l0_l wf_ρ_l0 /=.
+  rewrite 2!scE [_+m]addnAC -cat_cons -!μS !c2tE /=.
+  rewrite -!addnS [_+k.+1]addnAC (IHt l0) //.
+  by rewrite 2!scE c2tE /= -cat_cons -μS -addSn -!addnS.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma L1 T ρ l m: wf ρ l ->
+Lemma L1 T ρ l m: wf ρ l ->      (* Lemma 6 [in paper] *)
   σc (ξ [ρ] T) (l + m) = ↑[0,m] (σc (ξ [ρ] T) l) :> term.
 Proof.
   move=> wfρl; move: (@L1_r (ξ [ρ] T) T ρ l l 0 0 m).
@@ -570,108 +643,123 @@ Proof.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma L2:
+Lemma L2_r:                     (* Gen. Lemma 7 [in paper] *)
   forall c,
     (forall T ρ S l l0 m k, c = ξ [ρ] T -> l >= l0 -> wf ρ l0 ->
          σc (ξ [μ (l+m) k ++ ρ] T) (l+m+k)
        = (σc (ξ [μ (l+m+1) k ++ ρ] T) (l+m+k+1))[! m+k ← S] :> term).
 Proof.
-  elim/clind=> // t ρ IH T ρ' S l l0 m k [_ <-] {t ρ'}; elim: T l l0 m k.
-  + move=> n l l0 m k le_l0_l wf_ρ_l0 /=; rewrite ![sc (ξ [_] _) _]scE.
-    rewrite !size_cat !size_μ; case: ltnP=> [lt_n_kDρ|].
-    * rewrite !nth_cat !size_μ; case: ltnP => [lt_nk|le_kn].
-      - rewrite !nth_μ // !scE !c2tE /= [_+1]addnAC.
-        by rewrite !subKn ?ltn_addl // ltnW // ltn_addl.
-      - set c := nth _ _ _; have cρ: c \in ρ.
-          by rewrite mem_nth // -subSn // leq_subLR.
-        case: (mem_wf wf_ρ_l0 cρ).
-        + case=> i -> le_i_l0; rewrite !scE !c2tE /=.
-          have {-4}->: l+m+k+1 - i = m+k + (l-i).+1.
-            have le_i_l := leq_trans le_i_l0 le_l0_l.
-            rewrite addn1 -!addSn [_+m]addnC [_+k]addnAC.
-            by rewrite -addnBA ?subSn // ltnW.
-          rewrite -ltn_subRL subnn /= -[X in _==X]addn0.
-          rewrite eqn_add2l /= addn1 subSn //.
-          by rewrite (@leq_trans l0) // -[l0]addn0 -addnA leq_add.
-        + case=> [T] [ρ'] [l'] [cE wf_ρ'_l' le_l'_l0].
-          have le_l'_l := leq_trans le_l'_l0 le_l0_l.
-          have /= := (IH _ cρ _ _ S _ _ (m+k) 0 cE le_l'_l wf_ρ'_l').
-          by rewrite -cE !(addn0, add0n) !addnA.
-    * move=> le_kDρ_n; rewrite !c2tE /=.
-      have h z: n + z - (k + size ρ) = (n - (k + size ρ)) + z.
-        by rewrite [n+z]addnC -addnBA // [z+_]addnC.
-      rewrite !h; have ->: l+m+k+1 = l.+1 + (m+k).
-         by rewrite addn1 addSn !addnA.
-      rewrite !addnA ltnNge leq_add2r -{2}[m]add0n leq_add2r.
-      rewrite {1}addnS /= eqn_add2r -{3}[m]add0n eqn_add2r.
-      by rewrite {1}addnS /= !(addnS, addSn).
-  + move=> t IHt u IHu l l0 m k le_l0_l wf_ρ_l0.
-    rewrite ![_ (σc (ξ [_] _) _)]scE ![sc (_ ○ _) _]scE !c2tE /=.
-    by rewrite (IHt _ l0) // (IHu _ l0).
-  + move=> t IHt l l0 m k le_l0_l wf_ρ_l0.
-    rewrite ![_ (σc (ξ [_] _) _)]scE ![sc (λλ [_]) _]scE !c2tE /=.
-    rewrite -cat_cons -μS -addnS (IHt _ l0) // addnS; congr (λ [_ [! _ ← _]]).
-    by rewrite {1}[(_+k)+1]addnAC -cat_cons -μS !addn1 addnS.
+elim/clind=> // t ρ IH T ρ' S l l0 m k [_ <-] {t ρ'}; elim: T l l0 m k.
++ move=> n l l0 m k le_l0_l wf_ρ_l0 /=; rewrite ![sc (ξ [_] _) _]scE.
+  rewrite !size_cat !size_μ; case: ltnP=> [lt_n_kDρ|].
+  * rewrite !nth_cat !size_μ; case: ltnP => [lt_nk|le_kn].
+    - rewrite !nth_μ // !scE !c2tE /= [_+1]addnAC.
+      by rewrite !subKn ?ltn_addl // ltnW // ltn_addl.
+    - set c := nth _ _ _; have cρ: c \in ρ.
+        by rewrite mem_nth // -subSn // leq_subLR.
+      case: (mem_wf wf_ρ_l0 cρ).
+      + case=> i -> lt_i_l0; rewrite !scE !c2tE /=.
+        have {-4}->: l+m+k+1 - i.+1 = m+k + (l-i).
+          have lt_i_l := leq_trans lt_i_l0 le_l0_l.
+          rewrite addn1 -!addSn [_+m]addnC [_+k]addnAC.
+          by rewrite -addnBA ?subSS // ltnW.
+        rewrite -ltn_subRL subnn /= -[X in _==X]addn0.
+        have lt_il := leq_trans lt_i_l0 le_l0_l.
+        rewrite eqn_add2l /= addn1 subn_eq0 leqNgt lt_il /=.
+        by rewrite subSn // -addnA (leq_trans lt_il) ?leq_addr.
+      + case=> [T] [ρ'] [l'] [cE wf_ρ'_l' le_l'_l0].
+        have le_l'_l := leq_trans le_l'_l0 le_l0_l.
+        have /= := (IH _ cρ _ _ S _ _ (m+k) 0 cE le_l'_l wf_ρ'_l').
+        by rewrite -cE !(addn0, add0n) !addnA.
+  * move=> le_kDρ_n; rewrite !c2tE /=.
+    have h z: n + z - (k + size ρ) = (n - (k + size ρ)) + z.
+      by rewrite [n+z]addnC -addnBA // [z+_]addnC.
+    rewrite !h; have ->: l+m+k+1 = l.+1 + (m+k).
+       by rewrite addn1 addSn !addnA.
+    rewrite !addnA ltnNge leq_add2r -{2}[m]add0n leq_add2r.
+    rewrite {1}addnS /= eqn_add2r -{3}[m]add0n eqn_add2r.
+    by rewrite {1}addnS /= !(addnS, addSn).
++ move=> t IHt u IHu l l0 m k le_l0_l wf_ρ_l0.
+  rewrite ![_ (σc (ξ [_] _) _)]scE ![sc (_ ○ _) _]scE !c2tE /=.
+  by rewrite (IHt _ l0) // (IHu _ l0).
++ move=> t IHt l l0 m k le_l0_l wf_ρ_l0.
+  rewrite ![_ (σc (ξ [_] _) _)]scE ![sc (λλ [_]) _]scE !c2tE /=.
+  rewrite -cat_cons -μS -addnS (IHt _ l0) // addnS; congr (λ [_ [! _ ← _]]).
+  by rewrite {1}[(_+k)+1]addnAC -cat_cons -μS !addn1 addnS.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma L3_r:
+Lemma L2:                       (* Lemma 7 [in paper] *)
+  forall T ρ S l l0 m, l >= l0 -> wf ρ l0 ->
+    σc (ξ [ρ] T) (l+m) = (σc (ξ [ρ] T) (l+m+1))[! m ← S] :> term.
+Proof.
+  move=> T ρ S l l0 m; move: (@L2_r (ξ [ρ] T) T ρ S l l0 m 0).
+  by rewrite !(addn0, add0n) /=; apply.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma L3_r:                     (* Gen. Lemma 8 [in paper] *)
   forall c,
     (forall B ρ N l0 l m, c = ξ [ρ] B -> l >= l0 -> wf (ξ [ρ] N :: ρ) l0 ->
           σc (ξ [μ l m ++ (ξ [ρ] N) :: ρ] B) (l+m)
-        = (σc (ξ [μ l.+1 m ++ ^l.+1 :: ρ] B) (l + m + 1))[! m ← σc (ξ [ρ] N) l] :> term).
+        = (σc (ξ [μ l.+1 m ++ ^l.+1 :: ρ] B) (l + m + 1))
+            [! m ← σc (ξ [ρ] N) l] :> term).
 Proof.
-  elim/clind=> // t ρ IH B ρ' N l0 l m [_ <-] {t ρ'}; elim: B l0 l m.
-  + move=> n l0 l m le_l0_l wfρ /=; rewrite scE [X in (_ X)[! _ ← _]]scE.
-    rewrite !size_cat !size_μ /=; case: ltnP.
-    * move=> lt_n_mDSρ; case: (ltnP n m) => [lt_nm|].
-      - rewrite !nth_cat !size_μ lt_nm !nth_μ //.
-        have le_n_mDl: n <= l + m by rewrite ltnW // ltn_addl.
-        rewrite ![sc ^_ _]scE subKn // addn1 addSn.
-        by rewrite subKn 1?ltnW // !c2tE /= lt_nm.
-      - rewrite leq_eqVlt; case/orP => [/eqP->|].
-        + rewrite !nth_cat !size_μ ltnn subnn /= [sc ^_ _]scE c2tE /=.
-          rewrite addn1 -addSn -[X in l.+1 + n - X]addn0 subnDl subn0.
-          rewrite ltnn eqxx; move: (@L1_r (ξ [ρ] N) N ρ l0 l 0 0 n).
-          by rewrite !(addn0, add0n) /= => -> //; inversion wfρ.
-        + case: n lt_n_mDSρ => // n; rewrite addnS ltnS.
-          move=> lt_n_mDρ lt_m_Sn; rewrite !nth_cat !size_μ ltnNge ltnW //=.
-          rewrite subSn //=; set c := nth _ _ _; have cρ: c \in ρ.
-            by rewrite mem_nth // -subSn // leq_subLR.
-          have wf'ρ: wf ρ l0 by inversion wfρ. case: (mem_wf wf'ρ cρ).
-          - case=> i -> le_i_l0; rewrite ![sc ^_ _]scE !c2tE /=.
-            have ->: l + m + 1 - i = m.+1 + (l - i).
-              by rewrite addn1 -addnS addnC addnBA // (@leq_trans l0).
-            rewrite ltnNge ltnW ?ltn_addr //= addSnnS.
-            rewrite -[X in _==X]addn0 eqn_add2l /=.
-            by rewrite addnC -addnBA // (@leq_trans l0).
-          - case=> [T] [ρ'] [l'] [cE wf_ρ'_l' le_l'_l0]; rewrite cE.
-            have le_l'_l := leq_trans le_l'_l0 le_l0_l; set S := sc _ l.
-            have /= := (@L2 _ _ _ S _ _ m 0 cE le_l'_l wf_ρ'_l').
-            by rewrite !(addn0, add0n).
-     * move=> le_mDSρ_n; set q := n - (m + (size ρ).+1).
-       have h: forall h, n + h - (m + (size ρ).+1) = q + h.
-         by move=> h; rewrite addnC -addnBA // addnC.
-       rewrite !{}h !c2tE /= !addnA [_+1]addnAC.
-       rewrite [X in X < m]addnC -ltn_subRL subnn /=.
-       by rewrite -[X in _==X]add0n eqn_add2r addnS /= addn0.
-   + move=> t IHt u IHu l0 l m le_l0_l wf /=.
-     rewrite 2!scE !c2tE /= (IHt l0) // (IHu l0) //.
-     by rewrite [sc (ξ [_] (_ · _)) _]scE [sc (_ ○ _) _]scE !c2tE /=.
-   + move=> t IHt l0 l m le_l0_l wf /=; rewrite 2!scE !c2tE /=.
-     rewrite -cat_cons -μS -!addnS (IHt l0) //.
-     rewrite [sc (ξ [_] (λ [_])) _]scE [sc (λλ [_]) _]scE !c2tE /=.
-     by rewrite μS !addn1 addnS.
+elim/clind=> // t ρ IH B ρ' N l0 l m [_ <-] {t ρ'}; elim: B l0 l m.
++ move=> n l0 l m le_l0_l wfρ /=; rewrite scE [X in (_ X)[! _ ← _]]scE.
+  rewrite !size_cat !size_μ /=; case: ltnP.
+  * move=> lt_n_mDSρ; case: (ltnP n m) => [lt_nm|].
+    - rewrite !nth_cat !size_μ lt_nm !nth_μ //.
+      have le_n_mDl: n <= l + m by rewrite ltnW // ltn_addl.
+      rewrite ![sc (^ _) _]scE subKn // addn1 addSn.
+      by rewrite subKn 1?ltnW // !c2tE /= lt_nm.
+    - rewrite leq_eqVlt; case/orP => [/eqP->|].
+      + rewrite !nth_cat !size_μ ltnn subnn /= [sc (^ _) _]scE c2tE /=.
+        rewrite addn1 -addSn -[X in l.+1 + n - X]addn0 subnDl subn0.
+        rewrite ltnn eqxx; move: (@L1_r (ξ [ρ] N) N ρ l0 l 0 0 n).
+        rewrite !(addn0, add0n) /= => -> //; case/wfr_term: wfρ.
+        by move=> k le_kl0 wfρ; apply (@WFRWeak k) => //; apply/ltnW.
+      + case: n lt_n_mDSρ => // n; rewrite addnS ltnS.
+        move=> lt_n_mDρ lt_m_Sn; rewrite !nth_cat !size_μ ltnNge ltnW //=.
+        rewrite subSn //=; set c := nth _ _ _; have cρ: c \in ρ.
+          by rewrite mem_nth // -subSn // leq_subLR.
+        have wf'ρ: wf ρ l0; first case/wfr_term: wfρ.
+          by move=> k le_kl0; apply (@WFRWeak k).
+        case: (mem_wf wf'ρ cρ).
+        - case=> i -> le_i_l0; rewrite ![sc (^ _) _]scE !c2tE /=.
+          have ->: l + m + 1 - i.+1 = m + (l - i).
+            rewrite addn1 subSS addnC addnBA //.
+            by apply/ltnW/(@leq_trans l0).
+          rewrite -ltn_subRL subnn ltn0 -{3}[m]addn0 eqn_add2l.
+          rewrite subn_eq0 leqNgt (@leq_trans l0) //=.
+          by rewrite subnS addnC -addnBA // ltnW 1?(@leq_trans l0).
+        - case=> [T] [ρ'] [l'] [cE wf_ρ'_l' le_l'_l0]; rewrite cE.
+          have le_l'_l := leq_trans le_l'_l0 le_l0_l; set S := sc _ l.
+          have /= := (@L2_r _ _ _ S _ _ m 0 cE le_l'_l wf_ρ'_l').
+          by rewrite !(addn0, add0n).
+   * move=> le_mDSρ_n; set q := n - (m + (size ρ).+1).
+     have h: forall h, n + h - (m + (size ρ).+1) = q + h.
+       by move=> h; rewrite addnC -addnBA // addnC.
+     rewrite !{}h !c2tE /= !addnA [_+1]addnAC.
+     rewrite [X in X < m]addnC -ltn_subRL subnn /=.
+     by rewrite -[X in _==X]add0n eqn_add2r addnS /= addn0.
++ move=> t IHt u IHu l0 l m le_l0_l wf /=.
+  rewrite 2!scE !c2tE /= (IHt l0) // (IHu l0) //.
+  by rewrite [sc (ξ [_] (_ · _)) _]scE [sc (_ ○ _) _]scE !c2tE /=.
++ move=> t IHt l0 l m le_l0_l wf /=; rewrite 2!scE !c2tE /=.
+  rewrite -cat_cons -μS -!addnS (IHt l0) //.
+  rewrite [sc (ξ [_] (λ [_])) _]scE [sc (λλ [_]) _]scE !c2tE /=.
+  by rewrite μS !addn1 addnS.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma L3:
+Lemma L3:                      (* Lemma 8 [in paper] *)
   forall B ρ N l, wf (ξ [ρ] N :: ρ) l ->
       σc (ξ [ξ [ρ] N :: ρ] B) l
     = (σc (ξ [^l.+1 :: ρ] B) l.+1)[! 0 ← σc (ξ [ρ] N) l] :> term.
 Proof.
-  move=> B ρ N l wf; move: (@L3_r (ξ [ρ] B) B ρ N l l 0).
-  by rewrite !(addn0, add0n) /= -addn1 => ->.
+move=> B ρ N l wf; move: (@L3_r (ξ [ρ] B) B ρ N l l 0).
+by rewrite !(addn0, add0n) /= -addn1 => ->.
 Qed.
 
 (* ==================================================================== *)
@@ -728,9 +816,33 @@ Inductive BetaRed1 : term -> term -> Prop :=
 
 where "t ⇀_β u" := (BetaRed1 t u).
 
-Definition BetaRed := NoRed BetaRed1.
+Notation BetaRed := (NoRed BetaRed1).
 
 Notation "t → u" := (BetaRed t u).
+
+(* -------------------------------------------------------------------- *)
+Lemma Noμ1S R t1 t1' ts :
+  ~ IsWhnf t1 -> NoRed R t1 t1' -> NoRed R (t1 ·! ts) (t1' ·! ts).
+Proof.
+move=> Nwh1 r; elim: ts t1 t1' Nwh1 r => // t ts ih /= t1 t1' Nwh1 r.
+apply/ih => [h|]; [apply/Nwh1 | by apply/Noμ1].
+inversion h; elim/last_ind: ts0 H0 => //= us u _.
+by rewrite AppS_rcons => -[<- _]; ctor.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma Noμ2Var x ts t t' us :
+    (forall z, z \in ts -> IsNf z) -> t → t'
+  -> (#x ·! ts · t ·! us) → (#x ·! ts · t' ·! us).
+Proof.
+move=> nf r; elim/last_ind: us => [|us u ih]//=.
+  apply/Noν => //; first by apply/IsNfVar.
+  by elim/last_ind: {nf} ts => // zs z _; rewrite AppS_rcons.
+rewrite !AppS_rcons; apply/Noμ2 => //.
+  by rewrite -AppS_rcons -AppS_cat; ctor.
+rewrite -AppS_rcons -AppS_cat; elim/last_ind: (_ ++ _) => //.
+by move=> zs z ihz; rewrite AppS_rcons .
+Qed.
 
 (* -------------------------------------------------------------------- *)
 Definition IsNeutralC (c : closure) :=
@@ -745,6 +857,19 @@ Inductive IsWhnfC : closure -> Prop :=
 Inductive IsNfC : closure -> Prop :=
 | IsNfCLam : forall c, IsNfC c -> IsNfC (λλ [c])
 | IsNfCVar : forall n cs, (forall c, c \in cs -> IsNfC c) -> IsNfC (⌊n⌋ ○! cs).
+
+(* -------------------------------------------------------------------- *)
+Inductive IsExc : closure -> Prop :=
+| Exc1 n ρ t1 t2 :
+    IsExc ((λλ [ξ [^n :: ρ] t1]) ○ (ξ [ρ] t2))
+
+| Exc2 c :
+    IsExc c -> IsExc (λλ [c])
+
+| Exc3 n ρ nfc c ts :
+    let cs := [seq ξ [ρ] t | t <- ts] in
+    IsExc c -> (forall nf, nf \in nfc -> IsNfC nf) ->
+    IsExc (⌊n⌋ ○! nfc ○ c ○! cs).
 
 (* -------------------------------------------------------------------- *)
 Reserved Notation "t ⇀_[ l ] u" (at level 60, no associativity, format "t  ⇀_[ l ]  u").
@@ -768,7 +893,7 @@ Section NoCCtxt.
 
   | NoCμ1: forall l c1 c1' c2, ~IsWhnfC c1 ->
 
-                  c1 ⇀_[l] c2
+                  c1 ⇀_[l] c1'
       (* ————————————————————————————————– *)
       ->    (c1 ○ c2) ⇀_[l] (c1' ○ c2)
 
@@ -788,7 +913,7 @@ Section NoCCtxt.
 
                    c ⇀_[l.+1] c'
       (* ————————————————————————————————– *)
-      ->     (λλ [c]) ⇀_[l] (λλ [c])
+      ->     (λλ [c]) ⇀_[l] (λλ [c'])
   
   where "c1 ⇀_[ l ] c2" := (NoCRed l c1 c2).
 End NoCCtxt.
@@ -799,7 +924,7 @@ Inductive RhoRed1 : nat -> closure -> closure -> Prop :=
     (ξ [ρ] #n) ⇀_[ρ,l] nth ^0 ρ n
 
 | RhoRedFree: forall l n ρ, n >= size ρ ->
-    (ξ [ρ] #n) ⇀_[ρ,l] ⌊n - (size ρ - l)⌋
+    (ξ [ρ] #n) ⇀_[ρ,l] ⌊n + l - size ρ⌋
 
 | RhoRedApp: forall l t u ρ,
     (ξ [ρ] (t · u)) ⇀_[ρ,l] (ξ [ρ] t) ○ (ξ [ρ] u)
@@ -812,7 +937,7 @@ Inductive RhoRed1 : nat -> closure -> closure -> Prop :=
 
 where "c1 ⇀_[ 'ρ' , l ] c2" := (RhoRed1 l c1 c2).
 
-Definition RhoRed := NoCRed RhoRed1.
+Notation RhoRed := (NoCRed RhoRed1).
 
 Notation "c1 →_[ 'ρ' , l ] c2" := (RhoRed l c1 c2).
 Notation "c1 →*_[ 'ρ' , l ] c2" := (clos_refl_trans _ (RhoRed l) c1 c2).
@@ -820,12 +945,12 @@ Notation "c1 →*_[ 'ρ' , l ] c2" := (clos_refl_trans _ (RhoRed l) c1 c2).
 (* -------------------------------------------------------------------- *)
 Inductive TBetaRed1 : nat -> closure -> closure -> Prop :=
 | TBeta: forall l t u ρ,
-              (λλ [ξ[^l.+1 :: ρ] t]) ○ (ξ [ρ] u)
-    ⇀_[β, l] (ξ [ξ [ρ] u :: ρ] t)
+    (λλ [ξ[^l.+1 :: ρ] t]) ○ (ξ [ρ] u)
+      ⇀_[β, l] (ξ [ξ [ρ] u :: ρ] t)
 
 where "c1 ⇀_[ 'β' , l ] c2" := (TBetaRed1 l c1 c2).
 
-Definition TBetaRed := NoCRed TBetaRed1.
+Notation TBetaRed := (NoCRed TBetaRed1).
 
 Notation "c1 →_[ 'β' , l ] c2" := (TBetaRed l c1 c2).
 Notation "c1 →*_[ 'β' , l ] c2" := (clos_refl_trans _ (TBetaRed l) c1 c2).
@@ -840,11 +965,198 @@ Notation "c1 →_[ 'σ' , l ] c2" := (SigmaRed l c1 c2).
 Notation "c1 →*_[ 'σ' , l ] c2" := (clos_refl_trans _ (SigmaRed l) c1 c2).
 
 (* -------------------------------------------------------------------- *)
-Theorem commute (M : closure) (E E' : ephemeral) (l n : nat):
-     M →*_[σ, l] E
-  -> E → E'
-  -> exists X M', M →*_[ρ, l] X /\ X  →_[β, l] M' /\ M' →*_[σ, l] E'.
-Proof. Admitted.
+Derive Inversion_clear rwbb
+  with (forall c1 c2 c l, (λλ [c1] ○ c2) →_[β,l] c)
+  Sort Prop.
+
+Derive Inversion_clear rwb1
+  with (forall c c' l, c ⇀_[β,l] c')
+  Sort Prop.
+
+(* -------------------------------------------------------------------- *)
+Derive Inversion_clear rwb_app
+  with (forall l c1 c2 c, c1 ○ c2 →_[β,l] c)
+  Sort Prop.
+
+Derive Inversion rwb1_app
+  with (forall l c1 c2 c, c1 ○ c2 ⇀_[β,l] c)
+  Sort Prop.
+
+(* -------------------------------------------------------------------- *)
+Derive Inversion_clear rwbl_r
+  with (forall c c' l, λλ [c] →_[β,l] c')
+  Sort Prop.
+
+Lemma rwbl (c c' : closure) (l : nat) (P : closure -> closure -> nat -> Prop) :
+  (forall c'0 : closure, c →_[β,l.+1] c'0 -> P c (λλ [c'0]) l) ->
+  λλ [c] →_[β,l] c' -> P c c' l.
+Proof. by move=> h rw; inversion rw using rwbl_r; first inversion 1. Qed.
+
+(* -------------------------------------------------------------------- *)
+Derive Inversion_clear rwb_grd
+  with (forall n c l, ⌊n⌋ →_[β,l] c).
+
+Derive Inversion rwb1_grd
+  with (forall n c l, ⌊n⌋ ⇀_[β,l] c).
+
+(* -------------------------------------------------------------------- *)
+Derive Inversion_clear rwb_clos_r
+  with (forall l ρ t c, ξ [ρ] t →_[β,l] c)
+  Sort Prop.
+
+Derive Inversion_clear rwb1_clos_r
+  with (forall l ρ t c, ξ [ρ] t ⇀_[β,l] c)
+  Sort Prop.
+
+Lemma rwb_clos l ρ t c : ~ (ξ [ρ] t →_[β,l] c).
+Proof. by rev/rwb_clos_r; rev/rwb1_clos_r. Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma sc_rho1 c1 c2 l : c1 →_[ρ,l] c2 -> sc c1 l = sc c2 l.
+Proof. elim => {l c1 c2} l; first last.
++ by move=> c c' _ ih; rewrite [LHS] scE [RHS]scE -ih.
++ by move=> c1 c2 c2' _ _ _ ih; rewrite [LHS] scE [RHS]scE -ih.
++ by move=> c1 c1' c2 _ _ _ ih; rewrite [LHS] scE [RHS]scE -ih.
++ by move=> c1 c1' c2 _ _ ih; rewrite [LHS] scE [RHS]scE -ih.
+move=> c1 c2 [] {l} l => [n ρ|n ρ|t u ρ|t ρ|n]; try by rewrite !scE.
++ by move=> ltn; rewrite scE ltn; congr (sc _ _); apply/set_nth_default.
++ by move=> geq; rewrite !scE ltnNge geq.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma sc_rho c1 c2 l : c1 →*_[ρ,l] c2 -> sc c1 l = sc c2 l.
+Proof. by elim=> {c1 c2} [c1 c2 /sc_rho1||c1 c2 c3 _ -> _ ->]. Qed.
+
+Lemma wfc_rho1 c1 c2 l : wfc l c1 -> c1 →_[ρ,l] c2 -> wfc l c2.
+Proof.
+move=> wfc1 r; elim: r wfc1 => {l c1 c2} l; first last.
++ by move=> c c' _ ih; rev/wfc_lam => /ih w; ctor.
++ by move=> c1 c2 c2' _ _ _ ih; rev/wfc_app => w1 /ih w2; ctor.
++ by move=> c1 c1' c2 _ _ _ ih; rev/wfc_app => /ih w1 w2; ctor.
++ by move=> c1 c1' c2 _ _ ih; rev/wfc_app=> /ih w1 w2; ctor.
+move=> c1 c2 [] {c1 c2 l} l =>[n|t u|t u|t|n]; try by ctor.
++ move=> ρ ltn; rev/wfc_clos => wf1; elim: wf1 n ltn => {ρ} //=.
+  * move=> i t ρt ρ n lt_in wfρt iht wfρ ih [_|k] /=; last first.
+      by rewrite ltnS => /ih.
+    by ctor; apply/(@WFRWeak i)/(@wfr_strg _ _ i).
+  * move=> i ρ n lt_in wf ih [_|k] /=.
+      by ctor. by rewrite ltnS=> /ih.
++ by move=> ρ; rev/wfc_clos=> wf1; do 2! ctor.
++ move=> ρ; rev/wfc_clos=> wf1; do 2! ctor.
+  apply/WFRFormal; rewrite ?leqnn //.
+  by apply/(@wfr_strg _ _ l); rewrite ?leqnSn.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma wfc_rho c1 c2 l : wfc l c1 -> c1 →*_[ρ,l] c2 -> wfc l c2.
+Proof.
+move=> h r; elim: r h => {c1 c2} [c1 c2|c //|c1 c2 c3 _ ih1 _ ih2].
+  by move/wfc_rho1. by move/ih1/ih2.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma inv_redX3_rhd l n (nfc : seq closure) M :
+    (forall nf, nf \in nfc -> IsNfC nf)
+  -> ~ (⌊n⌋ ○! nfc →_[β,l] M).
+Proof.
+elim/last_ind: nfc M => /= [|nfc nf ih] M h.
+  by rev/rwb_grd; rev/rwb1_grd.
+rewrite CAppS_rcons; rev/rwb_app; first rev/rwb1_app.
++ move=> _ _ t u ρ _ eq; absurd False => //; move: eq.
+  by elim/last_ind: nfc {ih h} => //= zs z _; rewrite CAppS_rcons.
++ by move=> c1' h'; absurd False => //; apply/h'; ctor.
++ move=> c1' _ _; apply/ih => nf' mem; apply/h.
+  by rewrite mem_rcons inE mem orbT.
++ move=> c2' _ _; have nf': (IsNfC nf); first apply/h.
+    by rewrite mem_rcons inE eqxx.
+  elim: nf' c2' l {ih} => [c _ ihc|k cs _ ihcs] c2' l.
+    by rev/rwbl => ?; apply/ihc.
+  elim/last_ind: cs ihcs c2' => /= [|cs c ihcs] ih c2'.
+    by rev/rwb_grd; rev/rwb1_grd.
+  rewrite CAppS_rcons; rev/rwb_app; first rev/rwb1_app.
+  + move=> _ _ t u ρ _; elim/last_ind: cs {ihcs ih} => //.
+    by move=> zs z _; rewrite CAppS_rcons.
+  + by move=> c1' h' _; apply/h'; ctor.
+  + move=> c1' _ _; apply/ihcs => c' c'_in_cs c3 l'.
+    by apply/ih; rewrite mem_rcons inE c'_in_cs orbT.
+  + by move=> c3 _ _; apply/ih; rewrite mem_rcons inE eqxx.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma inv_redX3_r l n (nfc : seq closure) c M :
+    (forall nf, nf \in nfc -> IsNfC nf)
+  -> ⌊n⌋ ○! nfc ○ c →_[β,l] M
+  -> exists2 M', M = ⌊n⌋ ○! nfc ○ M' & c →_[β,l] M'.
+Proof.
+move=> h; rev/rwb_app; first rev/rwb1_app.
++ move=> _ _ t u ρ _ eq; absurd False => //; move: eq.
+  by elim/last_ind: nfc {h} => // zs z; rewrite CAppS_rcons.
++ by move=> c1' h'; absurd False => //; apply/h'; ctor.
++ by move=> c1'_ _ _ /inv_redX3_rhd -/(_ h).
++ by move=> c2' _ _ r; exists c2'.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma inv_redX3 l n (nfc : seq closure) c ρ ts M :
+  let cs := [seq ξ [ρ] t | t <- ts] in
+    (forall nf, nf \in nfc -> IsNfC nf)
+  -> ⌊n⌋ ○! nfc ○ c ○! cs →_[β,l] M
+  -> exists2 M', M = ⌊n⌋ ○! nfc ○ M' ○! cs & c →_[β,l] M'.
+Proof.
+move=> cs h; rewrite {}/cs; elim/last_ind: ts M => [|ts t ih] M.
+  by move/inv_redX3_r => /(_ h).
+rewrite map_rcons CAppS_rcons; rev/rwb_app.
++ rev/rwb1_app=> _ _ t' u' ρ' _ eq; absurd False => //.
+  move: eq; rewrite -CAppS_rcons -CAppS_cat; move: (_ ++ _).
+  by elim/last_ind=> //= z zs _; rewrite CAppS_rcons.
++ move=> c1'; rewrite -CAppS_rcons -CAppS_cat; move: (_ ++ _) => cs.
+  by move=> whnf; absurd False => //; apply/whnf; ctor.
++ by move=> c1' => h1 h2 /ih [M' ->] r; exists M' => //; rewrite CAppS_rcons.
++ by move=> c2' _ _ /rwb_clos.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma commute_r l (M1 : closure) (X : closure) (E : ephemeral) :
+    wfc l X 
+  -> IsExc X
+  -> X →_[β, l] M1
+  -> X →_[σ, l]  E
+  -> exists E', M1 →_[σ, l] E' /\ E → E'.
+Proof.
+rewrite /SigmaRed => wfX ecX rb ->; elim: {E} ecX M1 l wfX rb.
++ move=> n ρ t1 t2 M1 l wfX h; rev/rwbb: h => // {h}; last first.
+    by move=> c []; constructor.
+  move=> h; move: wfX; rev/rwb1: h => t u ρ'; set c := (X in sc X).
+  exists (sc c l); split=> //; rewrite 2!scE L3.
+    by rewrite !c2tE; do! ctor.
+  rev/wfc_app: wfX; rev/wfc_lam; rev/wfc_clos => wf1.
+  by rev/wfc_clos => w2; ctor.
++ move=> c exc ihc M1 l; rev/wfc_lam => wfX h; rev/rwbl: h.
+  move=> c' /ihc [] // E' [eq scE']; exists (λλ [E']); rewrite scE {1}eq.
+  by split=> //; rewrite scE !c2tE; apply/Noξ.
++ move=> n ρ nfc c ts cs exc ihc nf M1 l wfX.
+  have wflc: wfc l c by move/wfc_appsl: wfX; rev/wfc_app.
+  case/inv_redX3 => // cr -> /ihc -/(_ wflc); rewrite -/cs.
+  case=> [E' [eqE' rE']]; exists (sc (⌊n⌋ ○! nfc ○ cr ○! cs) l); split=> //.
+  rewrite !sc_appS !c2t_appS ![sc (_ ○ _) _]scE !sc_appS ![sc ⌊_⌋ _]scE.
+  rewrite !(c2tE, c2t_appS); apply/Noμ2Var; last by rewrite -eqE'.
+  move=> z; rewrite -map_comp => /mapP[c' /nf nfc'] -> /=.
+  elim: nfc' l {n ihc c cs exc rE' eqE' wflc wfX} => {c'}.
+    by move=> c _ ih l; rewrite scE c2tE; ctor; apply/ih.
+  move=> n cs _ ih l; rewrite sc_appS scE !(c2tE, c2t_appS).
+  by ctor=> t; rewrite -map_comp => /mapP[] c /ih /(_ l) nf' -> /=.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma commute l (M0 M1 : closure) (X : closure) (E : ephemeral) :
+    wfc l M0 -> IsExc X
+  -> M0 →*_[ρ, l] X
+  -> X →_[β, l] M1
+  -> X →_[σ, l]  E
+  -> exists E', M1 →_[σ, l] E' /\ E → E'.
+Proof.
+by move=> wfX exc r1 r2 rs; apply/(commute_r (wfc_rho wfX r1) exc r2 rs).
+Qed.
 
 (*
 *** Local Variables: ***

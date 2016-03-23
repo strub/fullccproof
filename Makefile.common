@@ -4,23 +4,17 @@
 .PHONY: all config build clean distclean __always__
 .SUFFIXES:
 
-TOP      = $(dir $(lastword $(MAKEFILE_LIST)))
-COQMAKE  = $(MAKE) -f Makefile.coq
-
-# --------------------------------------------------------------------
-TIMED = $(TOP)scripts/timed $(COQBIN)coqc
+TOP     := $(dir $(lastword $(MAKEFILE_LIST)))
+COQMAKE := $(MAKE) -f Makefile.coq
+COQC    ?= $(COQBIN)coqc
 
 # --------------------------------------------------------------------
 all: config build
 
 # --------------------------------------------------------------------
 Makefile.coq: Makefile
-ifeq ($(COQTIMED),1)
-	coq_makefile COQC = "$(TIMED)" -no-install $(INCFLAGS) $(COQFILES) -o Makefile.coq
-else
-	coq_makefile -install none $(INCFLAGS) $(COQFILES) -o Makefile.coq
-endif
-	+$(COQMAKE) depend
+	coq_makefile $(INCFLAGS) $(COQFILES) -o Makefile.coq
+	-+$(COQMAKE) depend
 
 # --------------------------------------------------------------------
 config: sub-config this-config Makefile.coq

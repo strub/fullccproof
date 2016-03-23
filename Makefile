@@ -1,10 +1,9 @@
 # -*- Makefile -*-
 
 # --------------------------------------------------------------------
-INCFLAGS = -I ssreflect -I .
-SUBDIRS  = ssreflect
-
-COQFILES = krivine.v
+INCFLAGS := -I .
+SUBDIRS  :=
+COQFILES := krivine.v
 
 -include Makefile.common
 
