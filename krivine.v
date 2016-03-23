@@ -1148,7 +1148,9 @@ rewrite /SigmaRed => wfX ecX rb ->; elim: {E} ecX M1 l wfX rb.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Theorem commute l (M0 M1 : closure) (X : closure) (E : ephemeral) :
+Theorem commute                 (* Theorem 12 [in paper] *)
+    l (M0 M1 : closure) (X : closure) (E : ephemeral)
+:
     wfc l M0 -> IsExc X
   -> M0 →*_[ρ, l] X
   -> X →_[β, l] M1
