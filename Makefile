@@ -4,6 +4,14 @@
 INCFLAGS := -I .
 SUBDIRS  :=
 COQFILES := krivine.v
+COQDOCJS := coqdocjs
+
+COQDOCFLAGS := \
+  --toc --toc-depth 2 --html --interpolate \
+  --index indexpage --no-lib-name --parse-comments \
+  --with-header $(COQDOCJS)/extra/header.html \
+	--with-footer $(COQDOCJS)/extra/footer.html
+export COQDOCFLAGS
 
 -include Makefile.common
 
@@ -13,6 +21,13 @@ this-clean::
 
 this-distclean::
 	rm -f $(shell find . -name '*~')
+
+# --------------------------------------------------------------------
+.PHONY: html
+
+html: config build
+	rm -rf html && $(COQMAKE) html
+	cp $(COQDOCJS)/extra/resources/* html
 
 # --------------------------------------------------------------------
 .PHONY: count dist
