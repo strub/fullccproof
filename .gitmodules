@@ -1,0 +1,4 @@
+[submodule "coqdocjs"]
+	path = coqdocjs
+	url = https://github.com/strub/coqdocjs.git
+	branch = restyled
