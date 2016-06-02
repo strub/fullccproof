@@ -8,6 +8,7 @@ COQDOCJS := coqdocjs
 
 COQDOCFLAGS := \
   --toc --toc-depth 2 --html --interpolate \
+	--external 'http://math-comp.github.io/math-comp/htmldoc/' mathcomp \
   --index indexpage --no-lib-name --parse-comments \
   --with-header $(COQDOCJS)/extra/header.html \
 	--with-footer $(COQDOCJS)/extra/footer.html
