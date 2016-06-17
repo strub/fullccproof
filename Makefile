@@ -3,11 +3,11 @@
 # --------------------------------------------------------------------
 INCFLAGS := -I .
 SUBDIRS  :=
-COQFILES := krivine.v
+COQFILES := fullcc.v
 COQDOCJS := coqdocjs
 
 COQDOCFLAGS := \
-  --toc --toc-depth 2 --html --interpolate \
+  --html --interpolate \
 	--external 'http://math-comp.github.io/math-comp/htmldoc/' mathcomp \
   --index indexpage --no-lib-name --parse-comments \
   --with-header $(COQDOCJS)/extra/header.html \
@@ -34,7 +34,7 @@ html: config build
 .PHONY: count dist
 
 # --------------------------------------------------------------------
-DISTDIR = krivine
+DISTDIR = fullcc
 TAROPT  = --posix --owner=0 --group=0
 
 dist:

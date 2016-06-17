@@ -596,7 +596,7 @@ elim=> //=.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma L1_r:                     (* Gen. Lemma 6 [in paper] *)
+Lemma L_5_4:                  (* Lemma 5.4 [in paper] *)
   forall c,
     forall N ρ l0 l k0 k m, c = ξ [ρ] N -> l >= l0 -> wf ρ l0 ->
           σc (ξ [μ (l+k0+m) k ++ ρ] N) (l+k0+k+m)
@@ -635,15 +635,15 @@ elim: N l0 l k0 k m.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma L1 T ρ l m: wf ρ l ->      (* Lemma 6 [in paper] *)
+Lemma L_5_3 T ρ l m: wf ρ l ->   (* Lemma 5.3 [in paper] *)
   σc (ξ [ρ] T) (l + m) = ↑[0,m] (σc (ξ [ρ] T) l) :> term.
 Proof.
-  move=> wfρl; move: (@L1_r (ξ [ρ] T) T ρ l l 0 0 m).
+  move=> wfρl; move: (@L_5_4 (ξ [ρ] T) T ρ l l 0 0 m).
   by rewrite !(addn0, add0n) /= => ->.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma L2_r:                     (* Gen. Lemma 7 [in paper] *)
+Lemma L_5_6:                    (* Lemma 5.6 [in paper] *)
   forall c,
     (forall T ρ S l l0 m k, c = ξ [ρ] T -> l >= l0 -> wf ρ l0 ->
          σc (ξ [μ (l+m) k ++ ρ] T) (l+m+k)
@@ -689,16 +689,16 @@ elim/clind=> // t ρ IH T ρ' S l l0 m k [_ <-] {t ρ'}; elim: T l l0 m k.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma L2:                       (* Lemma 7 [in paper] *)
+Lemma L_5_5:                    (* Lemma 5.5 [in paper] *)
   forall T ρ S l l0 m, l >= l0 -> wf ρ l0 ->
     σc (ξ [ρ] T) (l+m) = (σc (ξ [ρ] T) (l+m+1))[! m ← S] :> term.
 Proof.
-  move=> T ρ S l l0 m; move: (@L2_r (ξ [ρ] T) T ρ S l l0 m 0).
+  move=> T ρ S l l0 m; move: (@L_5_6 (ξ [ρ] T) T ρ S l l0 m 0).
   by rewrite !(addn0, add0n) /=; apply.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma L3_r:                     (* Gen. Lemma 8 [in paper] *)
+Lemma L_5_8:                    (* Lemma 5.8 [in paper] *)
   forall c,
     (forall B ρ N l0 l m, c = ξ [ρ] B -> l >= l0 -> wf (ξ [ρ] N :: ρ) l0 ->
           σc (ξ [μ l m ++ (ξ [ρ] N) :: ρ] B) (l+m)
@@ -716,7 +716,7 @@ elim/clind=> // t ρ IH B ρ' N l0 l m [_ <-] {t ρ'}; elim: B l0 l m.
     - rewrite leq_eqVlt; case/orP => [/eqP->|].
       + rewrite !nth_cat !size_μ ltnn subnn /= [sc (^ _) _]scE c2tE /=.
         rewrite addn1 -addSn -[X in l.+1 + n - X]addn0 subnDl subn0.
-        rewrite ltnn eqxx; move: (@L1_r (ξ [ρ] N) N ρ l0 l 0 0 n).
+        rewrite ltnn eqxx; move: (@L_5_4 (ξ [ρ] N) N ρ l0 l 0 0 n).
         rewrite !(addn0, add0n) /= => -> //; case/wfr_term: wfρ.
         by move=> k le_kl0 wfρ; apply (@WFRWeak k) => //; apply/ltnW.
       + case: n lt_n_mDSρ => // n; rewrite addnS ltnS.
@@ -735,7 +735,7 @@ elim/clind=> // t ρ IH B ρ' N l0 l m [_ <-] {t ρ'}; elim: B l0 l m.
           by rewrite subnS addnC -addnBA // ltnW 1?(@leq_trans l0).
         - case=> [T] [ρ'] [l'] [cE wf_ρ'_l' le_l'_l0]; rewrite cE.
           have le_l'_l := leq_trans le_l'_l0 le_l0_l; set S := sc _ l.
-          have /= := (@L2_r _ _ _ S _ _ m 0 cE le_l'_l wf_ρ'_l').
+          have /= := (@L_5_6 _ _ _ S _ _ m 0 cE le_l'_l wf_ρ'_l').
           by rewrite !(addn0, add0n).
    * move=> le_mDSρ_n; set q := n - (m + (size ρ).+1).
      have h: forall h, n + h - (m + (size ρ).+1) = q + h.
@@ -753,12 +753,12 @@ elim/clind=> // t ρ IH B ρ' N l0 l m [_ <-] {t ρ'}; elim: B l0 l m.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma L3:                      (* Lemma 8 [in paper] *)
+Lemma L_5_7:                    (* Lemma 5.7 [in paper] *)
   forall B ρ N l, wf (ξ [ρ] N :: ρ) l ->
       σc (ξ [ξ [ρ] N :: ρ] B) l
     = (σc (ξ [^l.+1 :: ρ] B) l.+1)[! 0 ← σc (ξ [ρ] N) l] :> term.
 Proof.
-move=> B ρ N l wf; move: (@L3_r (ξ [ρ] B) B ρ N l l 0).
+move=> B ρ N l wf; move: (@L_5_8 (ξ [ρ] B) B ρ N l l 0).
 by rewrite !(addn0, add0n) /= -addn1 => ->.
 Qed.
 
@@ -1127,7 +1127,7 @@ rewrite /SigmaRed => wfX ecX rb ->; elim: {E} ecX M1 l wfX rb.
 + move=> n ρ t1 t2 M1 l wfX h; rev/rwbb: h => // {h}; last first.
     by move=> c []; constructor.
   move=> h; move: wfX; rev/rwb1: h => t u ρ'; set c := (X in sc X).
-  exists (sc c l); split=> //; rewrite 2!scE L3.
+  exists (sc c l); split=> //; rewrite 2!scE L_5_7.
     by rewrite !c2tE; do! ctor.
   rev/wfc_app: wfX; rev/wfc_lam; rev/wfc_clos => wf1.
   by rev/wfc_clos => w2; ctor.
@@ -1148,7 +1148,7 @@ rewrite /SigmaRed => wfX ecX rb ->; elim: {E} ecX M1 l wfX rb.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Theorem commute                 (* Theorem 12 [in paper] *)
+Theorem commute                 (* Theorem 5.11 [in paper] *)
     l (M0 M1 : closure) (X : closure) (E : ephemeral)
 :
     wfc l M0 -> IsExc X

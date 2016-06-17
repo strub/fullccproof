@@ -13,3 +13,4 @@ Makefile.coq
 /attic
 /*.tar.*
 /html
+/paper
