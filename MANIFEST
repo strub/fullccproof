@@ -1,7 +1,7 @@
 # This MANIFEST
 MANIFEST
 
-# EC
+# Coq
 Makefile
 Makefile.common
 *.v

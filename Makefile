@@ -8,10 +8,10 @@ COQDOCJS := coqdocjs
 
 COQDOCFLAGS := \
   --html --interpolate \
-	--external 'http://math-comp.github.io/math-comp/htmldoc/' mathcomp \
+  --external 'http://math-comp.github.io/math-comp/htmldoc/' mathcomp \
   --index indexpage --no-lib-name --parse-comments \
   --with-header $(COQDOCJS)/extra/header.html \
-	--with-footer $(COQDOCJS)/extra/footer.html
+  --with-footer $(COQDOCJS)/extra/footer.html
 export COQDOCFLAGS
 
 -include Makefile.common
@@ -45,4 +45,4 @@ dist:
 
 count:
 	@coqwc $(COQFILES) | tail -1 | \
-     awk '{printf ("%d (spec=%d+proof=%d)\n", $$1+$$2, $$1, $$2)}'
+	  awk '{printf ("%d (spec=%d+proof=%d)\n", $$1+$$2, $$1, $$2)}'
