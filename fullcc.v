@@ -233,7 +233,7 @@ Section ClosureInd.
 End ClosureInd.
 
 (* -------------------------------------------------------------------- *)
-Fixpoint h (c : closure) :=
+Fixpoint h (c : closure) := nosimpl(
   match c with
   | ^n      => 0%N
   | ⌊n⌋     => 0%N
@@ -242,14 +242,24 @@ Fixpoint h (c : closure) :=
   | ξ [ρ] t =>
       let fix ht (t : term) := nosimpl (
         match t with
-        | λ [t']  => (ht t').+1
-        | t1 · t2 => (maxn (ht t1) (ht t2)).+1
+        | λ [t']  => (ht t').+2
+        | t1 · t2 => (maxn (ht t1) (ht t2)).+2
         | #n      => 
           let hs := [seq h c | c <- ρ] in
           if n < size hs then (nth 0 hs n).+1 else 0
         end)
       in ht t
-  end.
+  end).
+
+(* -------------------------------------------------------------------- *)
+Section HInd.
+Variable (P : closure -> Prop).
+
+Hypothesis (ih : forall c, (forall c', h c' < h c -> P c') -> P c).
+
+Lemma hind c : P c.
+Proof. Admitted.
+End HInd.
 
 (* -------------------------------------------------------------------- *)
 Fixpoint is_ephemeral c :=
@@ -1101,6 +1111,18 @@ move=> h r; elim: r h => {c1 c2} [c1 c2|c //|c1 c2 c3 _ ih1 _ ih2].
 Qed.
 
 (* -------------------------------------------------------------------- *)
+Derive Inversion_clear inv_nored_beta_lam_r
+  with (forall t u, λ [t] → u)
+  Sort Prop.
+
+Lemma inv_noredbeta_lam t u :
+  λ [t] → u -> exists t', [/\ t → t' & u = λ [t']].
+Proof.
+inversion 1 using inv_nored_beta_lam_r.
++ by inversion 1. + by eauto.
+Qed.
+
+(* -------------------------------------------------------------------- *)
 Lemma inv_redX3_rhd l n (nfc : seq closure) M :
     (forall nf, nf \in nfc -> IsNfC nf)
   -> ~ (⌊n⌋ ○! nfc →_[β,l] M).
@@ -1182,12 +1204,35 @@ move=> c; elim=> //= {n} [ρ t ρts _ _|k nfc c' ρts _ _ _ _] n.
 Qed.
 
 (* -------------------------------------------------------------------- *)
+Lemma c2tE_lamI (c : closure) (t : term) :
+  c = λ [t] :> term -> exists ct, c = λλ [ct] /\ ct = t :> term.
+Proof.
+case: c => [u c|n|n|c1 c2|c]; try by rewrite /term_of_closure_r -lock.
+by rewrite c2tE=> -[cE]; exists c; rewrite cE.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma rhored_trans_lam (t t' : closure) l :
+  t →*_[ρ,l.+1] t' -> λλ [t] →*_[ρ,l] λλ [t'].
+Proof.
+elim => [X1 X2 h|X|X1 X2 X3 _ ih1 _ ih2].
+- by apply/rt_step/NoCξ.
+- by apply/rt_refl.
+- by apply/(rt_trans _ _ _ _ _ ih1 ih2).
+Qed.
+
+(* -------------------------------------------------------------------- *)
 Lemma L_5_11 l (S M M' : closure) :
   wfc l S -> IsStc S -> M → M' -> S →_[σ, l] M ->
     exists X, [/\ wfc l X, IsExc X & S →*_[ρ, l] X].
 Proof.
-rewrite /SigmaRed => wfS stc rd ME; subst M; elim: stc wfS rd => /=.
-+ move=> ρ t ρts rho_ρ rho_ρts hwfc hsc.
+rewrite /SigmaRed => wfS stc rd ME; subst M.
+elim/hind: S M' l stc rd wfS => S ih M' l h; case: h ih => /=.
++ move=> ρ t ρts rho_ρ rho_ρs ih /=; case: t ih => [n|t1 t2|t] ih.
+  * admit.
+  * case (ρts =P [::]) => [{rho_ρs}->/=|].
+    - move=> sct wft. admit.
+    - admit.
 Abort.
 
 (*
