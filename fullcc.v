@@ -868,6 +868,20 @@ by move=> zs z ihz; rewrite AppS_rcons .
 Qed.
 
 (* -------------------------------------------------------------------- *)
+Derive Inversion_clear beta_var
+  with (forall x t, #x ⇀_β t)
+  Sort Prop.
+
+Derive Inversion_clear nobeta_var
+  with (forall x t, #x → t)
+  Sort Prop.
+
+Lemma NoVar x t: ~ (#x → t).
+Proof.
+by inversion 1 using nobeta_var; inversion 1 using beta_var.
+Qed.
+
+(* -------------------------------------------------------------------- *)
 Definition IsNeutralC (c : closure) :=
   if c is λλ [_] then false else true.
 
@@ -1222,17 +1236,53 @@ elim => [X1 X2 h|X|X1 X2 X3 _ ih1 _ ih2].
 Qed.
 
 (* -------------------------------------------------------------------- *)
+Derive Inversion_clear wfc_closI
+  with (forall l ρ n, wfc l (ξ [ρ] #n))
+  Sort Prop.
+
+(* -------------------------------------------------------------------- *)
+Lemma lth_appSL c1 c2 cs : h c1 < h c2 -> h c1 < h (c2 ○! cs).
+Proof.
+move=> lt; elim/last_ind: cs => // cs c3 ih.
+by rewrite CAppS_rcons /= ltnS leq_max (ltnW ih).
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma lth_clos (ρ : seq closure) n (x0 : closure) :
+  n < size ρ -> h (nth x0 ρ n) < h (ξ [ρ] #n).
+Proof.
+by move=> lt; rewrite /= size_map lt ltnS (nth_map x0).
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma mem_IsRhoS (ρ : seq closure) (c : closure) :
+  IsRhoS ρ -> c \in ρ ->
+    (exists n, c = ^n) \/ (exists ρ' t, c = ξ [ρ'] t).
+Proof. elim=> //.
++ move=> ρ1 ρ2 t _ ih1 _ ih2; rewrite in_cons; case/orP.
+  - by move/eqP=> ->; right; eauto.
+  - by move/ih2.
++ move=> n ρ' _ ih'; rewrite in_cons; case/orP.
+  - by move/eqP=> ->; left; eauto.
+  - by move/ih'.
+Qed.
+
+(* -------------------------------------------------------------------- *)
 Lemma L_5_11 l (S M M' : closure) :
   wfc l S -> IsStc S -> M → M' -> S →_[σ, l] M ->
     exists X, [/\ wfc l X, IsExc X & S →*_[ρ, l] X].
 Proof.
 rewrite /SigmaRed => wfS stc rd ME; subst M.
 elim/hind: S M' l stc rd wfS => S ih M' l h; case: h ih => /=.
-+ move=> ρ t ρts rho_ρ rho_ρs ih /=; case: t ih => [n|t1 t2|t] ih.
-  * admit.
-  * case (ρts =P [::]) => [{rho_ρs}->/=|].
-    - move=> sct wft. admit.
-    - admit.
++ move=> ρ t ρts rho_ρ rho_ρs ih /=; case (ρts =P [::]).
+  * move=> ρtsE; subst ρts; case: t ih => [n|t1 t2|t] ih.
+    - rewrite scE /=; case: ltnP; last by rewrite ?c2tE => _ /NoVar[].
+      move=> lt_nρ rdn wfn; set c' := nth _ _ _ in rdn.
+      case/(_ c' _ M' l): ih => //.
+      + by apply/lth_appSL/lth_clos.
+      + move/mem_nth: (lt_nρ) => /(_ ⌊0⌋) /mem_wf -/(_ l).
+        inversion wfn using wfc_closI => wfρ /(_ wfρ) [].
+        * case.
 Abort.
 
 (*
