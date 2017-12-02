@@ -294,6 +294,28 @@ elim: t ρ => /= [n|t1 ih1 t2 ih2|t iht] ρ.
 + by rewrite {1}[X in X :: _](_ : 0 = h (^(size ρ))) ?unlock.
 Qed.
 
+Fixpoint ht hs t :=
+  match t with
+  | #n =>
+    if n < size hs then (nth 0 hs n).+1 else 0
+      
+  | λ [t'] =>
+    (ht (0 :: hs) t').+2
+      
+  | t1 · t2 =>
+    (maxn (ht hs t1) (ht hs t2)).+2
+  end.
+
+Lemma hcE c : h c =
+  match c with
+  | ^n      => 0%N
+  | ⌊n⌋     => 0%N
+  | c1 ○ c2 => (maxn (h c1) (h c2)).+1
+  | λλ [c]  => (h c).+1
+  | ξ [ρ] t => ht [seq h c | c <- ρ] t
+  end.
+Proof. by rewrite unlock; elim/clind: c. Qed.
+
 (* -------------------------------------------------------------------- *)
 Section HInd.
 Variable (P : closure -> Prop).
@@ -1304,6 +1326,10 @@ move=> lt; elim/last_ind: cs => // cs c3 ih.
 by rewrite CAppS_rcons [X in _ < X]hE ltnS leq_max (ltnW ih).
 Qed.
 
+Lemma lth_clos_lam l ρs t :
+  h (λλ [ξ [^l :: ρs] t]) < h (ξ [ρs] (λ [t])).
+Proof. by rewrite !hcE /= !ltnS [h ^l]hE. Qed.
+
 (* -------------------------------------------------------------------- *)
 Lemma lth_clos (ρ : seq closure) n (x0 : closure) :
   n < size ρ -> h (nth x0 ρ n) < h (ξ [ρ] #n).
@@ -1360,8 +1386,13 @@ elim/hind: S M' l stc rd wfS => S ih M' l h; case: h ih => /=.
       by apply/NoCBase; constructor.
     - rewrite /= scE; set c := (X in sc X) => scd wfd.
       case/(_ c _ M' l): ih => //.
-      + apply/lth_appSL; rewrite /c hE.
-
+      + by apply/lth_appSL/lth_clos_lam.
+      + admit.
+      + admit.
+      admit.
+  * admit.
++ admit.
++ admit.      
 Abort.
 
 (*
