@@ -233,23 +233,66 @@ Section ClosureInd.
 End ClosureInd.
 
 (* -------------------------------------------------------------------- *)
-Fixpoint h (c : closure) := nosimpl(
+Module Height.
+Fixpoint h (c : closure) :=
   match c with
   | ^n      => 0%N
   | ⌊n⌋     => 0%N
   | c1 ○ c2 => (maxn (h c1) (h c2)).+1
   | λλ [c]  => (h c).+1
   | ξ [ρ] t =>
-      let fix ht (t : term) := nosimpl (
+      let ρ := [seq h c | c <- ρ] in
+
+      let fix ht ρ t :=
         match t with
-        | λ [t']  => (ht t').+2
-        | t1 · t2 => (maxn (ht t1) (ht t2)).+2
-        | #n      => 
-          let hs := [seq h c | c <- ρ] in
-          if n < size hs then (nth 0 hs n).+1 else 0
-        end)
-      in ht t
-  end).
+        | #n =>
+            if n < size ρ then (nth 0 ρ n).+1 else 0
+      
+        | λ [t'] =>
+            (ht (0 :: ρ) t').+2
+      
+        | t1 · t2 =>
+            (maxn (ht ρ t1) (ht ρ t2)).+2
+        end
+      in ht ρ t
+  end.
+End Height.
+
+(* -------------------------------------------------------------------- *)
+Module Type HSig.
+  Parameter h  : closure -> nat.
+  Parameter hE : h = Height.h.
+End HSig.
+
+Module H : HSig.
+  Definition h := Height.h.
+
+  Lemma hE : h = Height.h.
+  Proof. by []. Qed.
+End H.
+
+Notation  h := H.h.
+Canonical h_unlock := Unlockable H.hE.
+
+(* -------------------------------------------------------------------- *)
+Lemma hE c : h c =
+  match c with
+  | ^n              => 0%N
+  | ⌊n⌋             => 0%N
+  | c1 ○ c2         => (maxn (h c1) (h c2)).+1
+  | λλ [c]          => (h c).+1
+  | ξ [ρ] #n        => if n < size ρ then (h (nth ⌊0⌋ ρ n)).+1 else 0
+  | ξ [ρ] (t1 · t2) => (h (ξ [ρ] t1 ○ ξ [ρ] t2)).+1
+  | ξ [ρ] (λ [u])   => (h (λλ [ξ [^(size ρ) :: ρ] u])).+1
+  end.
+Proof.
+rewrite unlock; elim/clind: c => // t ρ _ /=.
+elim: t ρ => /= [n|t1 ih1 t2 ih2|t iht] ρ.
++ rewrite size_map; case: ltnP => // lt.
+  by rewrite (nth_map ⌊0⌋) // unlock.
++ by rewrite !(ih1, ih2).
++ by rewrite {1}[X in X :: _](_ : 0 = h (^(size ρ))) ?unlock.
+Qed.
 
 (* -------------------------------------------------------------------- *)
 Section HInd.
@@ -258,7 +301,12 @@ Variable (P : closure -> Prop).
 Hypothesis (ih : forall c, (forall c', h c' < h c -> P c') -> P c).
 
 Lemma hind c : P c.
-Proof. Admitted.
+Proof.
+suff H: forall n, forall c, h c <= n -> P c by apply (H (h c)).
+elim=> {c} [|n ihn] c hcE; apply/ih.
++ by move=> c'; rewrite leqn0 in hcE; rewrite (eqP hcE).
+by move=> c' lt; apply/ihn; rewrite -ltnS (@leq_trans (h c)).
+Qed.
 End HInd.
 
 (* -------------------------------------------------------------------- *)
@@ -1253,22 +1301,23 @@ Derive Inversion_clear wfc_closI
 Lemma lth_appSL c1 c2 cs : h c1 < h c2 -> h c1 < h (c2 ○! cs).
 Proof.
 move=> lt; elim/last_ind: cs => // cs c3 ih.
-by rewrite CAppS_rcons /= ltnS leq_max (ltnW ih).
+by rewrite CAppS_rcons [X in _ < X]hE ltnS leq_max (ltnW ih).
 Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma lth_clos (ρ : seq closure) n (x0 : closure) :
   n < size ρ -> h (nth x0 ρ n) < h (ξ [ρ] #n).
 Proof.
-by move=> lt; rewrite /= size_map lt ltnS (nth_map x0).
+move=> lt; rewrite [X in _ < X]hE /= lt ltnS.
+by rewrite -(set_nth_default _ x0).
 Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma mem_IsRhoS (ρ : seq closure) (c : closure) :
   IsRhoS ρ -> c \in ρ ->
-    (exists n, c = ^n) \/ (exists ρ' t, c = ξ [ρ'] t).
+    (exists n, c = ^n) \/ (exists ρ' t, c = ξ [ρ'] t /\ IsRhoS ρ').
 Proof. elim=> //.
-+ move=> ρ1 ρ2 t _ ih1 _ ih2; rewrite in_cons; case/orP.
++ move=> ρ1 ρ2 t h1 ih1 h2 ih2; rewrite in_cons; case/orP.
   - by move/eqP=> ->; right; eauto.
   - by move/ih2.
 + move=> n ρ' _ ih'; rewrite in_cons; case/orP.
@@ -1294,11 +1343,15 @@ elim/hind: S M' l stc rd wfS => S ih M' l h; case: h ih => /=.
       rewrite -/c'; case=> [T] [ρ'] [l'] [c'E wf' lel].
       case/(_ c' _ M' l): ih => //.
       + by apply/lth_appSL/lth_clos.
-      + admit.
+      + rewrite c'E; apply (@Stc1 _ _ [::]) => //.
+        move/mem_nth: (lt_nρ) => /(_ ⌊0⌋) /mem_IsRhoS.
+        case/(_ rho_ρ) => [[k]|]; first by rewrite -/c' c'E.
+        by case=> [ρ''] [T']; rewrite -/c' c'E => -[] [_ ->].
       + rewrite c'E; constructor. admit.
       admit.
     - rewrite /= scE; set c := (X in sc X) => scd wfd.
       case/(_ c _ M' l): ih => //.
+      + by rewrite /c [X in _ < X]hE.
       + apply: (@Stc1 _ _ [:: (ρ, t2) ]) => //=.
         by move=> ρt; rewrite mem_seq1 => /eqP ->.
       + by do 2! constructor; elim/wfc_clos: wfd.
@@ -1307,7 +1360,8 @@ elim/hind: S M' l stc rd wfS => S ih M' l h; case: h ih => /=.
       by apply/NoCBase; constructor.
     - rewrite /= scE; set c := (X in sc X) => scd wfd.
       case/(_ c _ M' l): ih => //.
-      + apply/lth_appSL; rewrite /c.
+      + apply/lth_appSL; rewrite /c hE.
+
 Abort.
 
 (*
