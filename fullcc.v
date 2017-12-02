@@ -1387,7 +1387,8 @@ elim/hind: S M' l stc rd wfS => S ih M' l h; case: h ih => /=.
     - rewrite /= scE; set c := (X in sc X) => scd wfd.
       case/(_ c _ M' l): ih => //.
       + by apply/lth_appSL/lth_clos_lam.
-      + admit.
+      + constructor; apply/(@Stc1 _ _ [::]) => //.
+        by apply/RhoS2.
       + admit.
       admit.
   * admit.
