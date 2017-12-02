@@ -908,7 +908,7 @@ Inductive IsRhoS : seq closure -> Prop :=
 
 (* -------------------------------------------------------------------- *)
 Inductive IsStc : closure -> Prop :=
-| Stc1 ρ t ρts :
+| Stc1 ρ t (ρts : seq (seq closure * term)) :
        IsRhoS ρ
     -> (forall ρt, ρt \in ρts -> IsRhoS ρt.1)
     -> IsStc (ξ [ρ] t ○! [seq ξ[ρt.1] ρt.2 | ρt <- ρts])
@@ -1129,11 +1129,20 @@ Derive Inversion_clear inv_nored_beta_lam_r
   with (forall t u, λ [t] → u)
   Sort Prop.
 
+Derive Inversion_clear inv_nored_beta_var_r
+  with (forall n t, #n → t)
+  Sort Prop.
+
 Lemma inv_noredbeta_lam t u :
   λ [t] → u -> exists t', [/\ t → t' & u = λ [t']].
 Proof.
 inversion 1 using inv_nored_beta_lam_r.
 + by inversion 1. + by eauto.
+Qed.
+
+Lemma inv_noredbeta_var n t : ~ (#n → t).
+Proof.
+by inversion 1 using inv_nored_beta_var_r; inversion 1.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -1278,11 +1287,27 @@ elim/hind: S M' l stc rd wfS => S ih M' l h; case: h ih => /=.
   * move=> ρtsE; subst ρts; case: t ih => [n|t1 t2|t] ih.
     - rewrite scE /=; case: ltnP; last by rewrite ?c2tE => _ /NoVar[].
       move=> lt_nρ rdn wfn; set c' := nth _ _ _ in rdn.
+      move/mem_nth: (lt_nρ) => /(_ ⌊0⌋) /mem_wf -/(_ l).
+      inversion wfn using wfc_closI => wfρ /(_ wfρ) [].
+      + case=> x c'E; move: rdn; rewrite /c' c'E scE c2tE.
+        by case/inv_noredbeta_var.
+      rewrite -/c'; case=> [T] [ρ'] [l'] [c'E wf' lel].
       case/(_ c' _ M' l): ih => //.
       + by apply/lth_appSL/lth_clos.
-      + move/mem_nth: (lt_nρ) => /(_ ⌊0⌋) /mem_wf -/(_ l).
-        inversion wfn using wfc_closI => wfρ /(_ wfρ) [].
-        * case.
+      + admit.
+      + rewrite c'E; constructor. admit.
+      admit.
+    - rewrite /= scE; set c := (X in sc X) => scd wfd.
+      case/(_ c _ M' l): ih => //.
+      + apply: (@Stc1 _ _ [:: (ρ, t2) ]) => //=.
+        by move=> ρt; rewrite mem_seq1 => /eqP ->.
+      + by do 2! constructor; elim/wfc_clos: wfd.
+      move=> X [wfX exX rdX]; exists X; split=> //.
+      apply/(rt_trans _ _ _ c) => //; apply/rt_step.
+      by apply/NoCBase; constructor.
+    - rewrite /= scE; set c := (X in sc X) => scd wfd.
+      case/(_ c _ M' l): ih => //.
+      + apply/lth_appSL; rewrite /c.
 Abort.
 
 (*
