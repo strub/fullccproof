@@ -478,52 +478,40 @@ Lemma c2t_appS c cs :
 Proof. by elim: cs c => // c' cs ih c; rewrite ih c2tE. Qed.
 
 (* -------------------------------------------------------------------- *)
-Inductive wfr : nat -> seq closure -> nat -> Prop :=
+Inductive wf : seq closure -> nat -> Prop :=
 | WFREmpty:
-    forall n, wfr 0 [::] n
+    forall l, wf [::] l
 
 | WFRTerm:
-    forall i t ρt ρ n, i <= n
-     -> wfr i ρt i
-     -> wfr i ρ n
-     -> wfr i (ξ [ρt] t :: ρ) n
+    forall i j t ρt l ρ, i <= j
+     -> j <= l
+     -> wf ρt i
+     -> wf ρ j
+     -> wf (ξ [ρt] t :: ρ) l
 
 | WFRFormal:
-    forall i ρ n, i.+1 <= n
-     -> wfr i ρ n
-     -> wfr i.+1 (^i.+1 :: ρ) n
-
-| WFRWeak:
-    forall i j ρ n, i <= j -> j <= n
-     -> wfr i ρ n
-     -> wfr j ρ n.
-
-Notation wf ρ l := (wfr l ρ l).
+    forall l ρ, wf ρ l
+     -> wf (^l.+1 :: ρ) l.+1.
 
 (* -------------------------------------------------------------------- *)
-Lemma wfr_term i ρt t ρ n:
-  wfr i (ξ [ρt] t :: ρ) n ->
-    exists2 j, j <= i & wfr j ρ n.
+Lemma wfr_term ρt t ρ l:
+  wf (ξ [ρt] t :: ρ) l ->
+    exists2 j, j <= l & wf ρ j.
 Proof.
 set cs := _ :: _; move: {-2}cs (erefl cs); rewrite {}/cs.
-move=> cs csE wf1; elim: wf1 csE => // {i cs n}.
-+ by move=> i t' ρt' ρ' n lt_in h1 _ h2 _ [_ _ <-]; exists i.
-+ move=> i j ρ' n le_ij _ wf' ih eq; case: (ih eq).
-  by move=> k le_ki wf1; exists k => //; apply/(leq_trans le_ki).
+move=> cs csE wf1; elim: wf1 csE => // {cs l}.
++ by move=> i j t' ρt' l ρ' le_ij le_jl h1 _ h2 _[_ _ <-]; exists j.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma wfr_strg i ρ l l' : l <= l' -> wfr i ρ l -> wfr i ρ l'.
+Lemma wfr_strg ρ l l' : l <= l' -> wf ρ l -> wf ρ l'.
 Proof.
-move=> le_ll' wf1; elim: wf1 l' le_ll' => {i ρ l}; try by ctor.
-+ move=> i t ρt ρ n lt_in wft iht wf ih l' le_nl'; ctor.
-    by apply/(leq_trans lt_in). by apply/iht. by apply/ih.
-+ move=> i ρ n lt_in wfr ih l' le_nl'; ctor.
-    by apply/(leq_trans lt_in). by apply/ih.
-+ move=> i j ρ n le_ij le_jn wf ih l' le_nl'.
-  apply/(@WFRWeak i) => //; last by apply/ih.
-  by apply/(leq_trans le_jn).
-Qed.
+move=> le_ll' wf1. elim: wf1 l' le_ll' => {ρ l}; try by ctor.
++ move=> i j t ρt l ρ le_ij le_el wft iht wfr ih l' le_il.
+  apply/(@WFRTerm i j) => //. by apply/(leq_trans le_el).
++ move=> l ρ wfr ih l' lt_ll'.
+Admitted.
+
 
 (* -------------------------------------------------------------------- *)
 Inductive wfc : nat -> closure -> Prop :=
@@ -588,12 +576,13 @@ Lemma mem_wf l ρ c: wf ρ l -> c \in ρ ->
     | exists T ρ' l', [/\ c = ξ [ρ'] T, wf ρ' l' & l' <= l]].
 Proof.
 elim=> //=.
-+ move=> i t pt ρ' n le_in wf_pt IHpt wfρ' IHρ'; rewrite inE.
-  case/orP; [move/eqP=> -> | by move/IHρ'].
-  by right; exists t, pt, i.
-+ move=> i ρ' n lt_in wfρ' IHρ'; rewrite inE.
-  by case/orP; [move/eqP=> ->; left; exists i | by move/IHρ'].
-Qed.
++ move=> i j t pt l' ρ' le_ij le_jl' wf_pt IHpt wfρ' IHρ'; rewrite inE.
+  case/orP. move/eqP=> ->. right. exists t, pt, i. admit.
+  move/IHρ'. right. exists t, pt, i. admit.
++ move=> l' ρ' wfρ' IHρ'; rewrite inE.
+  case/orP. move/eqP=> ->. left. by exists l'.
+Admitted.
+
 
 (* -------------------------------------------------------------------- *)
 Lemma L_5_4:                  (* Lemma 5.4 [in paper] *)
@@ -718,13 +707,13 @@ elim/clind=> // t ρ IH B ρ' N l0 l m [_ <-] {t ρ'}; elim: B l0 l m.
         rewrite addn1 -addSn -[X in l.+1 + n - X]addn0 subnDl subn0.
         rewrite ltnn eqxx; move: (@L_5_4 (ξ [ρ] N) N ρ l0 l 0 0 n).
         rewrite !(addn0, add0n) /= => -> //; case/wfr_term: wfρ.
-        by move=> k le_kl0 wfρ; apply (@WFRWeak k) => //; apply/ltnW.
+        by move=> k le_kl0 wfρ; apply/(wfr_strg le_kl0 wfρ).
       + case: n lt_n_mDSρ => // n; rewrite addnS ltnS.
         move=> lt_n_mDρ lt_m_Sn; rewrite !nth_cat !size_μ ltnNge ltnW //=.
         rewrite subSn //=; set c := nth _ _ _; have cρ: c \in ρ.
           by rewrite mem_nth // -subSn // leq_subLR.
         have wf'ρ: wf ρ l0; first case/wfr_term: wfρ.
-          by move=> k le_kl0; apply (@WFRWeak k).
+          move=> k le_kl0. by apply/(wfr_strg le_kl0).
         case: (mem_wf wf'ρ cρ).
         - case=> i -> le_i_l0; rewrite ![sc (^ _) _]scE !c2tE /=.
           have ->: l + m + 1 - i.+1 = m + (l - i).
@@ -1036,16 +1025,13 @@ move=> wfc1 r; elim: r wfc1 => {l c1 c2} l; first last.
 + by move=> c1 c1' c2 _ _ ih; rev/wfc_app=> /ih w1 w2; ctor.
 move=> c1 c2 [] {c1 c2 l} l =>[n|t u|t u|t|n]; try by ctor.
 + move=> ρ ltn; rev/wfc_clos => wf1; elim: wf1 n ltn => {ρ} //=.
-  * move=> i t ρt ρ n lt_in wfρt iht wfρ ih [_|k] /=; last first.
-      by rewrite ltnS => /ih.
-    by ctor; apply/(@WFRWeak i)/(@wfr_strg _ _ i).
-  * move=> i ρ n lt_in wf ih [_|k] /=.
-      by ctor. by rewrite ltnS=> /ih.
+  * move=> i j t ρt l' ρ le_ij le_jl' wfρt iht wfρ ih [_|k] /=; last first. admit.
+    ctor. admit.
+  * move=> l' ρ wfr ih [_|k] /=.
+      by ctor. admit.
 + by move=> ρ; rev/wfc_clos=> wf1; do 2! ctor.
 + move=> ρ; rev/wfc_clos=> wf1; do 2! ctor.
-  apply/WFRFormal; rewrite ?leqnn //.
-  by apply/(@wfr_strg _ _ l); rewrite ?leqnSn.
-Qed.
+Admitted.
 
 (* -------------------------------------------------------------------- *)
 Lemma wfc_rho c1 c2 l : wfc l c1 -> c1 →*_[ρ,l] c2 -> wfc l c2.
@@ -1130,7 +1116,7 @@ rewrite /SigmaRed => wfX ecX rb ->; elim: {E} ecX M1 l wfX rb.
   exists (sc c l); split=> //; rewrite 2!scE L_5_7.
     by rewrite !c2tE; do! ctor.
   rev/wfc_app: wfX; rev/wfc_lam; rev/wfc_clos => wf1.
-  by rev/wfc_clos => w2; ctor.
+  admit.
 + move=> c exc ihc M1 l; rev/wfc_lam => wfX h; rev/rwbl: h.
   move=> c' /ihc [] // E' [eq scE']; exists (λλ [E']); rewrite scE {1}eq.
   by split=> //; rewrite scE !c2tE; apply/Noξ.
@@ -1145,7 +1131,7 @@ rewrite /SigmaRed => wfX ecX rb ->; elim: {E} ecX M1 l wfX rb.
     by move=> c _ ih l; rewrite scE c2tE; ctor; apply/ih.
   move=> n cs _ ih l; rewrite sc_appS scE !(c2tE, c2t_appS).
   by ctor=> t; rewrite -map_comp => /mapP[] c /ih /(_ l) nf' -> /=.
-Qed.
+Admitted.
 
 (* -------------------------------------------------------------------- *)
 Theorem commute                 (* Theorem 5.11 [in paper] *)
