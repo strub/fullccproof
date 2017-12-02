@@ -1389,10 +1389,20 @@ elim/hind: S M' l stc rd wfS => S ih M' l h; case: h ih => /=.
       + by apply/lth_appSL/lth_clos_lam.
       + constructor; apply/(@Stc1 _ _ [::]) => //.
         by apply/RhoS2.
-      + admit.
-      admit.
+      + elim/wfc_clos: wfd => wfd; do 3! constructor => //.
+        by apply/(wfr_strg _ wfd).
+      move=> X [wfX exX rdX]; exists X; split=> //.
+      apply/(rt_trans _ _ _ c) => //; apply/rt_step.
+      by apply/NoCBase; constructor.
   * admit.
-+ admit.
++ move=> c st ih rd wfd; case/(_ c _ M' l.+1 st): ih => //.
+  * by rewrite [X in _ < X]hE.
+  * admit.
+  * by elim/wfc_lam: wfd.
+  move=> X [wfX exX rdX]; exists (λλ [X]); split.
+  * by constructor.
+  * by constructor.
+  by apply rhored_trans_lam.
 + admit.      
 Abort.
 
