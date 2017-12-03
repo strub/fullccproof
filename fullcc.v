@@ -1536,6 +1536,11 @@ move=> h; elim: h l => {c} [c _ ih|n cs _ ih] l.
 Qed.
 
 (* -------------------------------------------------------------------- *)
+Lemma IsNeutral_rho ρ n l: n < size ρ ->
+  IsRhoS ρ -> IsNeutral (sc (nth ⌊0⌋ ρ n) l).
+Proof. Admitted.
+
+(* -------------------------------------------------------------------- *)
 Section StcCase.
 Variable (P : closure -> Prop).
 
@@ -1555,6 +1560,7 @@ Variable
                 IsStc c
              -> IsRhoS ρ
              -> (forall t ρ, c <> ξ [ρ] (λ [t]))
+             -> (forall c', c <> λλ [c'])
              -> (forall n cs,
                        (forall c', c' \in cs -> IsNfC c')
                     -> c <> ⌊n⌋ ○! cs)
@@ -1608,6 +1614,8 @@ Proof. elim=> {c} /=.
         rewrite -(map_cons (fun ρt => ξ [ρt.1] ρt.2)) -/tl.
         by rewrite tlE mem_rcons mem_head.
       + by elim/last_ind: {+}ρts' => // ρ'' c' _ t ρ; rewrite CAppS_rcons.
+      + move=> c'; elim/last_ind: {+}ρts' => // s x _.
+        by rewrite CAppS_rcons.
       + move=> k cs hcs; rewrite -CAppS_rcons -CAppS_cat.
         case/eq_capps_grdI=> _ csE; subst cs; move/(_ c): hcs => hF.
         by case: (NIsNfc (hF _)); rewrite mem_cat mem_rcons in_cons eqxx.
@@ -1696,7 +1704,22 @@ elim/hind: S M' l stc rd wfS => S ih M' l h; elim/stccase: h ih => /=.
   - by constructor.
   - by constructor.
   by apply rhored_trans_lam.
-* move=> c u ρ stc rho_ρ ne1 ne2 ih; rewrite scE c2tE => rd.
+* move=> c u ρ stc rho_ρ ne1 ne2 ne3 ih; rewrite scE c2tE => rd.
+  have ntc: IsNeutral (sc c l); first case: stc ne1 ne2 ne3.
+  - move=> ρ' t ρts rho_ρ' _ ne1 _ _; elim/last_ind: ρts ne1; last first.
+    + move=> s x _ _; rewrite sc_appS c2t_appS -!map_comp.
+      by rewrite map_rcons AppS_rcons.
+    move=> /=; elim: t => {ih} [n|t1 _ t2 _|t _] // ne1.
+    + rewrite scE; case: ltnP => [lt|]; last by rewrite c2tE.
+      by apply/IsNeutral_rho.
+    + by rewrite 2!scE c2tE.
+    + by move/(_ t ρ'): ne1.
+  - by move=> c' _ _ /(_ c').
+  - move=> n nfc c' ρts cs _ _ _ _ _ _; rewrite sc_appS scE sc_appS.
+    rewrite !(c2tE, c2t_appS) -!(AppS_cat, AppS_cons).
+    set X := (X in _ ·! X); elim/last_ind: X => //=.
+    + by rewrite scE c2tE.
+    + by move=> s x _; rewrite AppS_rcons.
   have: exists t, sc c l → t.
   - by admit.
   case=> t {rd} rd wfd; have []// := ih c _ (closure_of_term t) l.
