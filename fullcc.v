@@ -238,7 +238,7 @@ Fixpoint h (c : closure) :=
   match c with
   | ^n      => 0%N
   | ⌊n⌋     => 0%N
-  | c1 ○ c2 => (maxn (h c1) (h c2)).+1
+  | c1 ○ c2 => (h c1 + h c2).+1
   | λλ [c]  => (h c).+1
   | ξ [ρ] t =>
       let ρ := [seq h c | c <- ρ] in
@@ -252,7 +252,7 @@ Fixpoint h (c : closure) :=
             (ht (0 :: ρ) t').+2
       
         | t1 · t2 =>
-            (maxn (ht ρ t1) (ht ρ t2)).+2
+            (ht ρ t1 + ht ρ t2).+2
         end
       in ht ρ t
   end.
@@ -279,7 +279,7 @@ Lemma hE c : h c =
   match c with
   | ^n              => 0%N
   | ⌊n⌋             => 0%N
-  | c1 ○ c2         => (maxn (h c1) (h c2)).+1
+  | c1 ○ c2         => (h c1 + h c2).+1
   | λλ [c]          => (h c).+1
   | ξ [ρ] #n        => if n < size ρ then (h (nth ⌊0⌋ ρ n)).+1 else 0
   | ξ [ρ] (t1 · t2) => (h (ξ [ρ] t1 ○ ξ [ρ] t2)).+1
@@ -303,14 +303,14 @@ Fixpoint ht hs t :=
     (ht (0 :: hs) t').+2
       
   | t1 · t2 =>
-    (maxn (ht hs t1) (ht hs t2)).+2
+    (ht hs t1 + ht hs t2).+2
   end.
 
 Lemma hcE c : h c =
   match c with
   | ^n      => 0%N
   | ⌊n⌋     => 0%N
-  | c1 ○ c2 => (maxn (h c1) (h c2)).+1
+  | c1 ○ c2 => (h c1 + h c2).+1
   | λλ [c]  => (h c).+1
   | ξ [ρ] t => ht [seq h c | c <- ρ] t
   end.
@@ -1390,7 +1390,8 @@ Derive Inversion_clear wfc_closI
 Lemma lth_appSL c1 c2 cs : h c1 < h c2 -> h c1 < h (c2 ○! cs).
 Proof.
 move=> lt; elim/last_ind: cs => // cs c3 ih.
-by rewrite CAppS_rcons [X in _ < X]hE ltnS leq_max (ltnW ih).
+rewrite CAppS_rcons [X in _ < X]hE ltnS.
+by apply/ltnW/(leq_trans ih); rewrite leq_addr.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -1536,9 +1537,12 @@ move=> h; elim: h l => {c} [c _ ih|n cs _ ih] l.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma IsNeutral_rho ρ n l: n < size ρ ->
+Lemma IsNeutral_rho ρ n l:
   IsRhoS ρ -> IsNeutral (sc (nth ⌊0⌋ ρ n) l).
-Proof. Admitted.
+Proof. move=> h; elim: h n => //.
++ move=> ρ1 ρ2 t _ ih1 _ ih2 [|n] //=.
+  rewrite scE.
+Admitted.
 
 (* -------------------------------------------------------------------- *)
 Section StcCase.
@@ -1685,7 +1689,7 @@ elim/hind: S M' l stc rd wfS => S ih M' l h; elim/stccase: h ih => /=.
   + move=> t /mapP[ct /= hct ->]; apply/IsNfC_IsNf.
     by apply/IsNfC_sc/nf_nfc.
   move=> u [rdu M'E]; case: (ih c _ (closure_of_term u) l) => //.
-  + by rewrite [X in _ < X]hE ltnS leq_maxr.
+  + by rewrite [X in _ < X]hE ltnS leq_addl.
   + by rewrite {2}/term_of_closure_r -lock closure_of_termK.
   + by elim/wfc_app: wfd.
   move=> X [wfX exX rdX]; exists (⌊n⌋ ○! nfc ○ X); split.
@@ -1723,7 +1727,7 @@ elim/hind: S M' l stc rd wfS => S ih M' l h; elim/stccase: h ih => /=.
   have: exists t, sc c l → t.
   - by admit.
   case=> t {rd} rd wfd; have []// := ih c _ (closure_of_term t) l.
-  - by rewrite [X in _ < X]hE ltnS leq_maxl.
+  - by rewrite [X in _ < X]hE ltnS leq_addr.
   - by rewrite {2}/term_of_closure_r -lock closure_of_termK.
   - by elim/wfc_app: wfd.
   have nt: IsNeutral c by admit.
