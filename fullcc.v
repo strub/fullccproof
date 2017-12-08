@@ -567,52 +567,50 @@ Lemma c2t_appS c cs :
 Proof. by elim: cs c => // c' cs ih c; rewrite ih c2tE. Qed.
 
 (* -------------------------------------------------------------------- *)
-Inductive wfs : seq closure -> nat -> Prop :=
-| WFSEmpty:
-    forall l, wfs [::] l
+Inductive wf : seq closure -> nat -> Prop :=
+| WFEmpty:
+    forall l, wf [::] l
 
-| WFSTerm:
+| WFTerm:
     forall i j t ρt l ρ, i <= j
      -> j <= l
-     -> wfs ρt i
-     -> wfs ρ j
-     -> wfs (ξ [ρt] t :: ρ) l
+     -> wf ρt i
+     -> wf ρ j
+     -> wf (ξ [ρt] t :: ρ) l
 
-| WFSFormal:
-    forall i l ρ, wfs ρ i
+| WFFormal:
+    forall i l ρ, wf ρ i
      -> i.+1 <= l
-     -> wfs (^i.+1 :: ρ) l.
-
-Notation wf ρ l := (wfs ρ l).
+     -> wf (^i.+1 :: ρ) l.
 
 (* -------------------------------------------------------------------- *)
-Lemma wfs_strg ρ l l' : l <= l' -> wfs ρ l -> wfs ρ l'.
+Lemma wf_strg ρ l l' : l <= l' -> wf ρ l -> wf ρ l'.
 Proof.
 move=> le_ll' wf1. elim: wf1 l' le_ll' => {ρ l}. try by ctor.
 + move=> i j t ρt l ρ le_ij le_jl wft iht wf ih l' le_ll'.
   have le_jl': j <= l'. by apply/(leq_trans le_jl).
   have leᵢ_il': i <= l'. by apply/(leq_trans le_ij).
-  apply/(@WFSTerm i j _ _ l' _). apply/le_ij. apply/le_jl'. apply/wft. by apply/wf.
+  apply/(@WFTerm i j _ _ l' _). apply/le_ij. apply/le_jl'. apply/wft. by apply/wf.
 + move=> i l ρ wf ih lt_il l' le_ll'.
-  apply/(@WFSFormal i l' _). apply/wf.
+  apply/(@WFFormal i l' _). apply/wf.
   apply/(@leq_trans l). apply/lt_il. by apply le_ll'.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma wfs_term ρt t ρ l:
-  wfs (ξ [ρt] t :: ρ) l ->
-    exists2 i, i <= l & wfs ρ i.
+Lemma wf_term ρt t ρ l:
+  wf (ξ [ρt] t :: ρ) l ->
+    exists2 i, i <= l & wf ρ i.
 Proof.
 set cs := _ :: _; move: {-2}cs (erefl cs); rewrite {}/cs.
 move=> cs csE wf1; elim: wf1 csE => // {cs l}.
 + move=> i j t' ρt' l ρ' lt_ij lt_jl h1 _ h2 _ [_ _ <-]; exists l. trivial.
-  apply/(@wfs_strg _ j _). trivial. by apply/h2.
+  apply/(@wf_strg _ j _). trivial. by apply/h2.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma wfs_term_sub ρt t ρ l:
-  wfs (ξ [ρt] t :: ρ) l ->
-    exists2 i, i <= l & wfs ρt i.
+Lemma wf_term_sub ρt t ρ l:
+  wf (ξ [ρt] t :: ρ) l ->
+    exists2 i, i <= l & wf ρt i.
 Proof.
 set cs := _ :: _; move: {-2}cs (erefl cs); rewrite {}/cs.
 move=> cs csE wf1; elim: wf1 csE => // {cs l}.
@@ -685,7 +683,7 @@ Lemma mem_wf l ρ c: wf ρ l -> c \in ρ ->
 Proof.
 elim=> //=.
 + move=> i j t pt l' ρ' le_ij le_jl' wf_pt IHpt wfρ' IHρ'; rewrite inE.
-  have wf_pt_l': wfs pt l'. apply/(@wfs_strg _ i).
+  have wf_pt_l': wf pt l'. apply/(@wf_strg _ i).
   by apply/(leq_trans le_ij). apply/wf_pt.
   case/orP. move/eqP=> ->. right. by exists t, pt, l'.
   move=> c_ρ. case (@IHρ' c_ρ).
@@ -711,7 +709,7 @@ Proof.
   case (mem_wf wf1 cρ).
   * by case=> i' -> lt_i'l; apply/WFCLvl/lt_i'l.
   * case=> T [ρ'] [l'] [cE wf_ρ'_l' le_l'_l0]; rewrite cE.
-    apply/WFCClos/(@wfs_strg _ l'). apply/le_l'_l0. apply/wf_ρ'_l'.
+    apply/WFCClos/(@wf_strg _ l'). apply/le_l'_l0. apply/wf_ρ'_l'.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -836,14 +834,14 @@ elim/clind=> // t ρ IH B ρ1 ρ2 N l0 l m [_ <-] {t ρ1}; elim: B l0 l m.
       + rewrite !nth_cat !size_μ ltnn subnn /= [sc (^ _) _]scE c2tE /=.
         rewrite addn1 -addSn -[X in l.+1 + n - X]addn0 subnDl subn0.
         rewrite ltnn eqxx; move: (@L_5_4 (ξ [ρ2] N) N ρ2 l0 l 0 0 n).
-        rewrite !(addn0, add0n) /= => -> //; case/wfs_term_sub: wfρ.
-        by move=> k le_kl0 wfρ; apply/(@wfs_strg _ k).
+        rewrite !(addn0, add0n) /= => -> //; case/wf_term_sub: wfρ.
+        by move=> k le_kl0 wfρ; apply/(@wf_strg _ k).
       + case: n lt_n_mDSρ => // n; rewrite addnS ltnS.
         move=> lt_n_mDρ lt_m_Sn; rewrite !nth_cat !size_μ ltnNge ltnW //=.
         rewrite subSn //=; set c := nth _ _ _; have cρ: c \in ρ.
           by rewrite mem_nth // -subSn // leq_subLR.
-        have wf'ρ: wf ρ l0; first case/wfs_term: wfρ.
-          by move=> k le_kl0; apply/(@wfs_strg _ k).
+        have wf'ρ: wf ρ l0; first case/wf_term: wfρ.
+          by move=> k le_kl0; apply/(@wf_strg _ k).
         case: (mem_wf wf'ρ cρ).
         - case=> i -> le_i_l0; rewrite ![sc (^ _) _]scE !c2tE /=.
           have ->: l + m + 1 - i.+1 = m + (l - i).
@@ -1245,15 +1243,15 @@ move=> c1 c2 [] {c1 c2 l} l =>[n|t u|t u|t|n]; try by ctor.
 + move=> ρ ltn; rev/wfc_clos => wf1; elim: wf1 n ltn => {ρ} //=.
   * move=> i j t ρt l' ρ lt_ij lt_jl' wfρt iht wfρ ih [_|k] /=; last first.
     rewrite ltnS. move=> k_ρ'. move:(@ih k k_ρ'). apply/wfc_strg_clos.
-    apply/(@wfs_strg _ j). apply/lt_jl'. apply/wfρ. apply/lt_jl'. apply/k_ρ'.
-    ctor. apply/(@wfs_strg _ i). apply/(leq_trans lt_ij). apply lt_jl'. apply/wfρt.
+    apply/(@wf_strg _ j). apply/lt_jl'. apply/wfρ. apply/lt_jl'. apply/k_ρ'.
+    ctor. apply/(@wf_strg _ i). apply/(leq_trans lt_ij). apply lt_jl'. apply/wfρt.
   * move=> i l' ρ wf1 ih lt_il' [_|k] /=.
     by ctor. rewrite ltnS. move=> k_ρ'. move:(@ih k k_ρ'). apply/wfc_strg_clos.
-      apply/(@wfs_strg _ i). apply/ltnW/lt_il'. apply/wf1.
+      apply/(@wf_strg _ i). apply/ltnW/lt_il'. apply/wf1.
       apply/ltnW/lt_il'. apply/k_ρ'.
 + by move=> ρ; rev/wfc_clos=> wf1; do 2! ctor.
 + move=> ρ; rev/wfc_clos=> wf1; do 2! ctor.
-  apply/WFSFormal. apply/wf1. apply ltnSn.
+  apply/WFFormal. apply/wf1. apply ltnSn.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -1666,7 +1664,7 @@ elim/hind: S M' l stc rd wfS => S ih M' l h; elim/stccase: h ih => /=.
     move/mem_nth: (lt_nρ) => /(_ ⌊0⌋) /mem_IsRhoS.
     case/(_ rho_ρ) => [[k]|]; first by rewrite -/c' c'E.
     by case=> [ρ''] [T']; rewrite -/c' c'E => -[] [_ ->].
-  + rewrite c'E; constructor. apply(@wfs_strg _ l'). apply lel. apply wf'.
+  + rewrite c'E; constructor. apply(@wf_strg _ l'). apply lel. apply wf'.
   move=> X [wfX exX rdX]; exists X; split=> //.
   apply/(@rt_trans _ _ _ c') => //; apply/rt_step.
   constructor; rewrite /c' (set_nth_default ^0) //.
