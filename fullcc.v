@@ -1217,6 +1217,7 @@ Qed.
 Lemma sc_rho c1 c2 l : c1 →*_[ρ,l] c2 -> sc c1 l = sc c2 l.
 Proof. by elim=> {c1 c2} [c1 c2 /sc_rho1||c1 c2 c3 _ -> _ ->]. Qed.
 
+(* -------------------------------------------------------------------- *)
 Lemma wfc_rho1 c1 c2 l : wfc l c1 -> c1 →_[ρ,l] c2 -> wfc l c2.
 Proof.
 move=> wfc1 r; elim: r wfc1 => {l c1 c2} l; first last.
@@ -1382,6 +1383,16 @@ Lemma rhored_trans_appL (t t' u : closure) l :
 Proof. Admitted.
 
 (* -------------------------------------------------------------------- *)
+Lemma sc_rho_inv c l t : sc c l = t :> term ->
+  exists2 e : ephemeral, c →*_[ρ,l] e & t = e.
+Proof. elim/clind: c l t.
++ move=> t cs ih l u <-; elim: t l => [n|t1 ih1 t2 ih2|t iht] l.
+  * admit.
+  * admit.
+  * rewrite scE.
++ 
+
+(* -------------------------------------------------------------------- *)
 Derive Inversion_clear wfc_closI
   with (forall l ρ n, wfc l (ξ [ρ] #n))
   Sort Prop.
@@ -1537,14 +1548,6 @@ move=> h; elim: h l => {c} [c _ ih|n cs _ ih] l.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma IsNeutral_rho ρ n l:
-  IsRhoS ρ -> IsNeutral (sc (nth ⌊0⌋ ρ n) l).
-Proof. move=> h; elim: h n => //.
-+ move=> ρ1 ρ2 t _ ih1 _ ih2 [|n] //=.
-  rewrite scE.
-Admitted.
-
-(* -------------------------------------------------------------------- *)
 Section StcCase.
 Variable (P : closure -> Prop).
 
@@ -1552,77 +1555,28 @@ Variable
   (HVar  : forall n ρ, IsRhoS ρ -> P (ξ [ρ] #n))
   (HApp  : forall t1 t2 ρ, IsRhoS ρ -> P (ξ [ρ] (t1 · t2)))
   (HLam  : forall t ρ, IsRhoS ρ -> P (ξ [ρ] (λ [t])))
-  (HBeta : forall t u ρt ρu,
-                IsRhoS ρt -> IsRhoS ρu
-             -> P (ξ [ρt] (λ [t]) ○ ξ [ρu] u))
-  (HClo  : forall n nfc c,
+  (HCLam : forall c, IsStc c -> P (λλ [c]))
+  (HClo  : forall n nfc c cs,
                 IsStc c
              -> (forall nf, nf \in nfc -> IsNfC nf)
-             -> P (⌊n⌋ ○! nfc ○ c))
-  (HCLam : forall c, IsStc c -> P (λλ [c]))
-  (HCApp : forall c u ρ,
-                IsStc c
-             -> IsRhoS ρ
-             -> (forall t ρ, c <> ξ [ρ] (λ [t]))
-             -> (forall c', c <> λλ [c'])
-             -> (forall n cs,
-                       (forall c', c' \in cs -> IsNfC c')
-                    -> c <> ⌊n⌋ ○! cs)
-             -> P (c ○ ξ [ρ] u)).
+             -> P (⌊n⌋ ○! nfc ○ c ○! cs))
+  (HCApp : forall ρ t ρts ρ' t',
+             let cs := [seq ξ [ρt.1] ρt.2 | ρt <- ρts] in
+                IsRhoS ρ
+             -> (forall ρt, ρt \in ρts -> IsRhoS ρt.1)
+             -> IsRhoS ρ'
+             -> P (ξ[ρ] t ○! cs ○ ξ[ρ'] t')).
 
 Lemma stccase c : IsStc c -> P c.
 Proof. elim=> {c} /=.
 + move=> ρ t ρts rho_ρ rho_ρs; elim/last_ind: ρts rho_ρs.
   - by move=> _ /=; case: t => [n|t1 t2|t]; auto.
   - move=> ρts ρt _ rho_ρs; rewrite map_rcons CAppS_rcons.
-    elim/last_ind: ρts rho_ρs => /= [|ρts ρt' _] rho_ρs.
-    * case: t => [n|t1 t2|t].
-      + apply/HCApp => //; first by apply/(@Stc1 _ _ [::]).
-        - by apply/rho_ρs; rewrite mem_seq1.
-        move=> k cs _; elim/last_ind: cs => //.
-        by move=> c' cs _; rewrite CAppS_rcons.
-      + apply/HCApp => //; first by apply/(@Stc1 _ _ [::]).
-        - by apply/rho_ρs; rewrite mem_seq1.
-        move=> n cs _; elim/last_ind: cs => //.
-        by move=> c' cs _; rewrite CAppS_rcons.
-      + by apply/HBeta => //; apply/rho_ρs; rewrite mem_seq1.
-    * rewrite map_rcons CAppS_rcons; apply/HCApp => //.
-      + rewrite -CAppS_rcons -map_rcons; apply/Stc1 => //.
-        move=> ρt'' inρt''; apply/rho_ρs.
-        by rewrite mem_rcons mem_behead /=.
-      + by apply/rho_ρs; rewrite mem_rcons mem_head.
-      move=> n cs _; rewrite -CAppS_rcons; move: (rcons _ _) => cs'.
-      elim/last_ind: cs' cs => [|cs' c' ih].
-      + by elim/last_ind => //= s x _; rewrite CAppS_rcons.
-      elim/last_ind; first by rewrite CAppS_rcons.
-      by move=> s x _; rewrite !CAppS_rcons; case=> /ih.
+    apply/HCApp=> //=.
+    * by move=> ρt' ρt'in; apply/rho_ρs; rewrite mem_rcons mem_behead.
+    * by apply/rho_ρs; rewrite mem_rcons mem_head.
 + by move=> c stc Pc; apply/HCLam.
-+ move=> n nfc c ρts stc Pc nf_nfc rho_ρs.
-  case: ρts nfc nf_nfc rho_ρs => [|ρt ρts] nfc nf_nfc rho_ρs.
-  - by apply/HClo.
-  have NIsNfc := IsStc_NIsNfC stc; set tl := map _ _.
-  have: exists ρts' ρ' t', tl = rcons ρts' (ξ [ρ'] t').
-    * rewrite {}/tl; elim/last_ind: ρts {rho_ρs} => /= [|ρts' ρt' _].
-      + by exists [::], ρt.1, ρt.2.
-      + pose s := [seq ξ [ρt.1] ρt.2 | ρt <- ρt :: ρts'].
-        by exists s, (ρt'.1), (ρt'.2); rewrite map_rcons.
-      case=> [ρts'] [ρ'] [t'] tlE; rewrite tlE CAppS_rcons; apply/HCApp.
-      + move: tlE; rewrite {}/tl => /(congr1 rev); rewrite -map_rev.
-        rewrite -cats1 rev_cat /=; case E : (rev _) => [|ρts'' x] //.
-        case=> _ _ /(congr1 rev); rewrite revK -map_rev => <-.
-        constructor=> // ρt'; rewrite mem_rev => inx; apply/rho_ρs.
-        by rewrite -mem_rev E mem_behead.
-      + have ->: ρ' = (ρ', t').1 by []. apply/rho_ρs.
-        rewrite -(mem_map (f := fun ρt => ξ [ρt.1] ρt.2)) /=; last first.
-        - by case=> [ρ1 t1] [ρ2 t2] [-> ->].
-        rewrite -(map_cons (fun ρt => ξ [ρt.1] ρt.2)) -/tl.
-        by rewrite tlE mem_rcons mem_head.
-      + by elim/last_ind: {+}ρts' => // ρ'' c' _ t ρ; rewrite CAppS_rcons.
-      + move=> c'; elim/last_ind: {+}ρts' => // s x _.
-        by rewrite CAppS_rcons.
-      + move=> k cs hcs; rewrite -CAppS_rcons -CAppS_cat.
-        case/eq_capps_grdI=> _ csE; subst cs; move/(_ c): hcs => hF.
-        by case: (NIsNfc (hF _)); rewrite mem_cat mem_rcons in_cons eqxx.
++ by move=> n nfc c ρts stc Pc nf_nfc rho_ρs; apply/HClo.
 Qed.
 End StcCase.
 
@@ -1672,6 +1626,18 @@ elim/hind: S M' l stc rd wfS => S ih M' l h; elim/stccase: h ih => /=.
   move=> X [wfX exX rdX]; exists X; split=> //.
   apply/(rt_trans _ _ _ c) => //; apply/rt_step.
   by apply/NoCBase; constructor.
+* move=> c st ih rd wfd; move: rd; rewrite scE c2tE.
+  case/NoLam => sM' [rM' M'E].
+  case/(_ c _ (closure_of_term sM') l.+1 st): ih => //.
+  - by rewrite [X in _ < X]hE.
+  - by rewrite {2}/term_of_closure_r -lock closure_of_termK.
+  - by elim/wfc_lam: wfd.
+  move=> X [wfX exX rdX]; exists (λλ [X]); split.
+  - by constructor.
+  - by constructor.
+  by apply rhored_trans_lam.
+
+
 * move=> t u ρt ρu rho_ρt rho_ρu ih _ wfd.
   exists (λλ [ξ [^l.+1 :: ρt] t] ○ ξ [ρu] u); split.
   + elim/wfc_app: wfd => wf1 wf2; constructor => //.
@@ -1698,16 +1664,6 @@ elim/hind: S M' l stc rd wfS => S ih M' l h; elim/stccase: h ih => /=.
   apply/rhored_trans_appR=> //.
   + by constructor=> c'; apply/nf_nfc.
   + by elim/last_ind: {+}nfc => [|? ? _]; last rewrite CAppS_rcons.
-* move=> c st ih rd wfd; move: rd; rewrite scE c2tE.
-  case/NoLam => sM' [rM' M'E].
-  case/(_ c _ (closure_of_term sM') l.+1 st): ih => //.
-  - by rewrite [X in _ < X]hE.
-  - by rewrite {2}/term_of_closure_r -lock closure_of_termK.
-  - by elim/wfc_lam: wfd.
-  move=> X [wfX exX rdX]; exists (λλ [X]); split.
-  - by constructor.
-  - by constructor.
-  by apply rhored_trans_lam.
 * move=> c u ρ stc rho_ρ ne1 ne2 ne3 ih; rewrite scE c2tE => rd.
   have ntc: IsNeutral (sc c l); first case: stc ne1 ne2 ne3.
   - move=> ρ' t ρts rho_ρ' _ ne1 _ _; elim/last_ind: ρts ne1; last first.
