@@ -1394,10 +1394,156 @@ move=> h1 h2; elim=> [X1 X2 h|X|X1 X2 X3 _ ih1 _ ih2].
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma rhored_trans_appL (t t' u : closure) l :
-  (IsWhnf t -> IsNeutral t) ->
-  t →*_[ρ,l] t' -> t ○ u →*_[ρ,l] t' ○ u.
-Proof. Admitted.
+Derive Inversion iswhnfI
+  with (forall c, IsWhnfC c)
+  Sort Prop.
+
+(* -------------------------------------------------------------------- *)
+Lemma iswhnfCN_pclos ρ t : ~ IsWhnfC (ξ [ρ] t).
+Proof.
+elim/iswhnfI => // _ n; elim/last_ind => [|cs c _] //.
+by rewrite CAppS_rcons.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma iswhnfCN_lvl l : ~ IsWhnfC (^l).
+Proof.
+elim/iswhnfI => // _ n; elim/last_ind => [|cs c _] //.
+by rewrite CAppS_rcons.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsNf_AppL t u : IsNf (t · u) -> IsNf t.
+Proof.
+suff: forall w, IsNf w -> w = t · u -> IsNf t.
++ by move=> h1 h2; apply/(h1 (t · u)).
+move=> w h; elim: h t u => //= x ts nf _ t u.
+elim/last_ind: ts nf => // ts t' _ nf.
+rewrite AppS_rcons => -[<- _]; constructor.
+by move=> z h; apply/nf; rewrite mem_rcons mem_behead.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsNf_AppR t u : IsNf (t · u) -> IsNf u.
+Proof.
+suff: forall w, IsNf w -> w = t · u -> IsNf u.
++ by move=> h1 h2; apply/(h1 (t · u)).
+move=> w h; elim: h t u => //= x ts nf _ t u.
+elim/last_ind: ts nf => // ts t' _ nf.
+rewrite AppS_rcons => -[_ <-]; apply/nf.
+by rewrite mem_rcons mem_head.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsNf_Lam t  : IsNf (λ [t]) -> IsNf t.
+Proof.
+suff: forall w, IsNf w -> w = λ [t] -> IsNf t.
++ by move=> h1 h2; apply/(h1 (λ [t])).
+move=> w h; move: h t; elim.
++ by move=> t nf _ _ -[<-].
++ move=> /= x ts _ _ t; elim/last_ind: ts => //.
+  by move=> ts t' _; rewrite AppS_rcons.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Derive Inversion isnfI
+  with (forall t, IsNf t)
+  Sort Prop.
+
+Lemma NIsNf_LamApp t u : ~ IsNf (λ [t] · u).
+Proof.
+elim/isnfI => //= _ x ts _; elim/last_ind: ts u => //.
+move=> ws w _ u; rewrite AppS_rcons => -[h _] {w u}.
+by elim/last_ind: ws h => // ws w _; rewrite AppS_rcons.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsNfC_IsNf (c : closure) : IsNfC c -> IsNf c.
+Proof.
+elim=> {c} [c _ h|c cs _ ih]; first by rewrite c2tE; constructor.
+rewrite c2t_appS c2tE; constructor.
+by move=> t /mapP[c' /ih h ->].
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma ephemeral_lamI (e : ephemeral) t :
+  e = λ [t] :> term -> exists2 e' : ephemeral,
+    e = λλ [e'] :> closure & e' = t :> term.
+Proof.
+case: e; case=> //=.
+- by move=> ? _; rewrite c2tE.
+- by move=> ?? _; rewrite c2tE.
+move=> c ce; rewrite c2tE => -[<-].
+by exists (Ephemeral ce).
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma ephemeral_varappI (e : ephemeral) x ts :
+  e = #x ·! ts :> term -> exists2 es : seq ephemeral,
+      e = ⌊x⌋ ○! [seq closure_of_ephemeral c | c <- es] :> closure
+    & [seq term_of_closure_r (closure_of_ephemeral c) | c <- es] = ts.
+Proof.
+move=> eE; pose us := [seq ephemeral_of_term t | t <- ts].
+exists us; first rewrite {}/us.
++ elim/last_ind: ts e eE => /= [|ts t ih] e eE.
+  * case: e eE => //; case=> //=.
+    - by move=> ? _; rewrite c2tE => -[->].
+    - by move=> ?? _; rewrite c2tE.
+    - by move=> ? _; rewrite c2tE.
+  * rewrite !map_rcons CAppS_rcons; case: e eE => //=; case=> //=.
+    - by move=> ? _; rewrite c2tE AppS_rcons.
+    - move=> e1 e2 /andP[h1 h2]; rewrite c2tE AppS_rcons.
+      case=> he1 he2; rewrite -(ih (Ephemeral h1)) //=.
+      by rewrite -he2 /term_of_closure_r -eq_lock term_of_closureK.
+    - by move=> ? _; rewrite c2tE AppS_rcons.
++ rewrite {}/us; elim: ts {eE} => //= t ts ->.
+  by rewrite /term_of_closure_r -lock closure_of_termK.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsNf_IsNfC (e : ephemeral) : IsNf e -> IsNfC e.
+Proof.
+suff: forall t, IsNf t ->
+  forall (e : ephemeral), t = e :> term -> IsNfC e.
++ by move=> h hc; apply/(h _ hc).
+move=> {e} t; elim=> {t} /= [t _ ih|x ts _ ih] e /esym eE.
++ case/ephemeral_lamI: eE => e' -> tE.
+  by constructor; apply/ih.
++ case/ephemeral_varappI: eE => es -> tsE.
+  constructor => c /mapP[/= e'].
+  move/(map_f (term_of_closure_r \o closure_of_ephemeral)) => /=.
+  by rewrite tsE => /ih h1 ->; apply/h1.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsNeutral_IsNeutralC (e : ephemeral) : IsNeutral e -> IsNeutralC e.
+Proof.
+suff: forall t, IsNeutral t ->
+  forall (e : ephemeral), t = e :> term -> IsNeutralC e.
++ by move=> h hc; apply/(h _ hc).
+case=> {e} //= [n _|t1 t2 _]; case => /=.
++ by case=> // c _; rewrite c2tE.
++ by case=> // c _; rewrite c2tE.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsNfApp_IsNeutral t u : IsNf (t · u) -> IsNeutral (t · u).
+Proof.
+suff: forall w, IsNf w -> forall t u, w = t · u -> IsNeutral w.
++ by move=> h1 h2; apply/h1.
+move=> w; case => //= x ts _ _ _ _.
+by elim/last_ind: ts => // ts t' _; rewrite AppS_rcons.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsNfC_IsEph c : IsNfC c -> is_ephemeral c.
+Proof.
+elim=> // n; elim/last_ind=> // cs c' ih h1 h2.
+rewrite CAppS_rcons /=; rewrite ih ?h2 //.
+* by rewrite mem_rcons mem_head.
+* by move=> c'' c''in; apply/h1; rewrite mem_rcons mem_behead.
+* by move=> c'' c''in; apply/h2; rewrite mem_rcons mem_behead.
+Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma h_closure_eq ρ1 ρ2 t :
@@ -1415,57 +1561,131 @@ elim: t ρ1 ρ2 => [n|t1 ih1 t2 ih2|t iht] ρ1 ρ2 eq /=.
   by apply/iht => /=; rewrite !hE eq.
 Qed.
 
-Lemma sc_rho_inv c l t : sc c l = t :> term ->
+Lemma sc_rho_inv c l t : IsNf t -> sc c l = t :> term ->
   exists2 e : ephemeral, c →*_[ρ,l] e & t = e.
 Proof. elim/hind: c l t; case.
-+ move=> t cs ih l u <-; case: t l ih => [n|t1 t2|t] l ih.
++ move=> t cs ih l u nf eq; rewrite -eq; case: t l eq ih => [n|t1 t2|t] l eq ih.
   * rewrite scE; case: ifPn => [ltn|gen]; last first.
     - exists (@Ephemeral ⌊n + l - size cs⌋ (erefl true)) => //=.
       by apply/rt_step; constructor; apply/RhoRedFree; rewrite leqNgt.
     set c := nth _ _ _; have ccs: c \in cs by rewrite mem_nth.
-    case/(_ c _ l (sc c l) (erefl _)): ih.
+    case/(_ c _ l (sc c l) _ (erefl _)): ih.
     - by rewrite [X in _ < X]hE ltn.
+    - by move: eq; rewrite scE ltn => ->.
     move=> e rd /esym eE; exists e => //.
     apply/(rt_trans _ _ _ c) => //; apply/rt_step.
     constructor; rewrite /c (set_nth_default ^0) //.
     by apply/(RhoRedVar l ltn).
   * rewrite scE; pose c := ξ [cs] t1 ○ ξ [cs] t2.
-    case: (ih c _ l _ (erefl _)); first by rewrite [X in _ < X]hE.
+    case: (ih c _ l _ _ (erefl _)).
+    - by rewrite [X in _ < X]hE.
+    - by move: nf; rewrite -eq /c scE.
     move=> e rd eE; exists e => //; apply/(rt_trans _ _ _ c) => //.
     by apply/rt_step/NoCBase/RhoRedApp.
-  * rewrite scE. set c := λλ [_]; case: (ih c _ l _ (erefl _)).
+  * rewrite scE. set c := λλ [_]; case: (ih c _ l _ _ (erefl _)).
     - rewrite [X in _ < X]hE /c ![h (λλ [_])]hE !ltnS.
       rewrite leq_eqVlt; apply/orP; left; apply/eqP.
       by apply/h_closure_eq => /=; rewrite !hE.
+    - by move: nf; rewrite -eq /c scE.
     move=> e rd eE; exists e => //; apply/(rt_trans _ _ _ c) => //.
     by apply/rt_step/NoCBase/RhoRedLam.
-+ move=> n _ l t <-; exists (@Ephemeral ⌊n⌋ (erefl true)) => /=.
++ move=> n _ l t _ <-; exists (@Ephemeral ⌊n⌋ (erefl true)) => /=.
   - by apply/rt_refl. - by rewrite scE.
-+ move=> n _ l t <-; exists (@Ephemeral ⌊l-n⌋ (erefl true)) => /=.
++ move=> n _ l t _ <-; exists (@Ephemeral ⌊l-n⌋ (erefl true)) => /=.
   - by apply/rt_step/NoCBase/RhoRedPar.
   - by rewrite scE.
-+ move=> c1 c2 ih l t <-; case: c1 ih.
-  - move=> u ρ; case: u => [n|u1 u2|u] ih.
++ move=> c1 c2 ih l t nf eq; rewrite -eq; case: c1 eq ih.
+  - case => [n|u1 u2|u] ρ eq ih.
     * rewrite 2!scE; case: ifPn => [ltn|gen]; last first.
-      + case: (ih c2 _ l _ (erefl _)).
+      + case: (ih c2 _ l _ _ (erefl _)).
         - by rewrite [X in _ < X]hE ltnS leq_addl.
+        - by move: nf; rewrite -eq scE c2tE => /IsNf_AppR.
         move=> e2 rd2 eE2; have: is_ephemeral (⌊n + l - size ρ⌋ ○ e2).
         - by rewrite /= valP.
-        move=> h; exists (Ephemeral h) => /=.
+        move=> h; exists (Ephemeral h) => /=; last first.
+        - by rewrite !c2tE; rewrite eE2.
         apply/(rt_trans _ _ _ (⌊n + l - size ρ⌋ ○ c2)).
         - apply/rt_step/NoCμ1 => /=.
-          * admit.
+          * by apply/iswhnfCN_pclos.
           * by apply/NoCBase/RhoRedFree; rewrite leqNgt.
-        - admit.
-        admit.
-      + admit.
-    * admit.
-    * admit.
-  - admit.
-  - admit.
-  - admit.
-+ admit.
-+ admit.
+        - by apply/rhored_trans_appR => //; apply/(@IsNfCVar _ [::]).
+      + set c := nth _ _ _; case: (ih (c ○ c2) _ l _ _ (erefl _)).
+        - rewrite [X in _ < X]hE ltnS hE ltn_add2r.
+          by rewrite [X in _ < X]hE ltn.
+        - move: nf; rewrite -eq ![sc (_ ○ _) _]scE.
+          by rewrite [sc (ξ [_] #_) _]scE ltn.
+        move=> e rd eE; exists e; last first.
+        - by rewrite -eE [in RHS]scE !c2tE.
+        apply/(rt_trans _ _ _ (c ○ c2)) => //.
+        apply/rt_step/NoCμ1 => [/iswhnfCN_pclos//|].
+        apply/NoCBase; rewrite /c (set_nth_default ^0) //.
+        by apply/RhoRedVar.
+    * rewrite scE; set c := ξ [ρ] u1 ○ ξ [ρ] u2 ○ c2.
+      case: (ih c _ l _ _ (erefl _)).
+      - rewrite /c hE [X in _ < X]hE ltnS ltn_add2r.
+        by rewrite hE 2![in X in _ < X]hE !ltnS.
+      - move: nf; rewrite -eq /c ![sc (_ ○ _) _]scE.
+        by rewrite [sc (ξ [_] _) _]scE scE.
+      move=> e rd eE; exists e; last first.
+      - by rewrite -eE /c [in RHS]scE [in LHS]scE.
+      apply/(rt_trans _ _ _ c) => //; apply/rt_step.
+      apply/NoCμ1 => [/iswhnfCN_pclos//|].
+      by apply/NoCBase/RhoRedApp.
+    * by move: nf; rewrite -eq scE !c2tE 2!scE !c2tE => /NIsNf_LamApp.
+  - move=> n tE /(_ c2 _ l _ _ (erefl _)) [].
+    * by rewrite [X in _ < X]hE ltnS leq_addl.
+    * by move: nf; rewrite -tE scE c2tE => /IsNf_AppR.
+    move=> e rd eE; have h: is_ephemeral (⌊n⌋ ○ e).
+    * by rewrite /= valP.
+    exists (Ephemeral h) => /=; last first.
+    * by rewrite 2!scE !c2tE eE.
+    by apply/rhored_trans_appR => //; apply/(@IsNfCVar _ [::]).
+  - move=> n tE /(_ c2 _ l _ _ (erefl _)) [].
+    * by rewrite [X in _ < X]hE ltnS leq_addl.
+    * by move: nf; rewrite -tE scE c2tE => /IsNf_AppR.
+    move=> e rd eE; have h: is_ephemeral (⌊l - n⌋ ○ e).
+    * by rewrite /= valP.
+    exists (Ephemeral h) => /=; last first.
+    * by rewrite 2!scE !c2tE eE.
+    apply/(rt_trans _ _ _ (⌊l - n⌋ ○ c2)).
+    * apply/rt_step/NoCμ1 => [/iswhnfCN_lvl//|].
+      by apply/NoCBase/RhoRedPar.
+    * by apply/rhored_trans_appR => //; apply/(@IsNfCVar _ [::]).
+
+  - move=> c c1 tE ih; case: (ih (c ○ c1) _ l _ _ (erefl _)).
+    * by rewrite [X in _ < X]hE ltnS leq_addr.
+    * by move: nf; rewrite -tE scE c2tE => /IsNf_AppL.
+    move=> e1 rd1 eE1; case: (ih c2 _ l _ _ (erefl _)).
+    * by rewrite [X in _ < X]hE ltnS leq_addl.
+    * by move: nf; rewrite -tE scE c2tE => /IsNf_AppR.
+    move=> e2 rd2 eE2; have h: is_ephemeral (e1 ○ e2).
+    * by rewrite /= !valP.
+    exists (Ephemeral h) => /=; last first.
+    * by rewrite scE !c2tE eE1 eE2.
+    have nfe1: IsNfC e1.
+    * move: nf; rewrite -tE scE c2tE => /IsNf_AppL.
+      by rewrite eE1; apply/IsNf_IsNfC.
+    apply/(rt_trans _ _ _ (e1 ○ c2)); last first.
+    * apply/rhored_trans_appR => //.
+      - move: {+}nfe1 => /IsNfC_IsNf; rewrite -eE1.
+        rewrite scE c2tE => /IsNfApp_IsNeutral.
+        rewrite -c2tE (_ : sc c l ○ sc c1 l = e1); last first.
+        + move/(congr1 closure_of_term): (eE1).
+          rewrite /term_of_closure_r -lock.
+          rewrite !term_of_closureK // 1?scE //.
+          * by apply/valP.
+          by apply/andP; split; apply/sc_is_ephemeral.
+        by move/IsNeutral_IsNeutralC.
+      - admit.
++ by move=> c tE _; move: nf; rewrite -tE 2!scE !c2tE => /NIsNf_LamApp.
++ move=> c ih l t nf tE; case: (ih c _ l.+1 _ _ (erefl _)).
+  * by rewrite [X in _ < X]hE ltnS.
+  * by move: nf; rewrite -tE scE c2tE => /IsNf_Lam.
+  move=> e rd E; have h: is_ephemeral (λλ [e]).
+  * by rewrite /= valP.
+  exists (Ephemeral h) => /=; last first.
+  * by rewrite -tE scE !c2tE E.
+  by apply/rhored_trans_lam.
 Admitted.
 
 (* -------------------------------------------------------------------- *)
@@ -1607,14 +1827,6 @@ Proof. elim=> {c}.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma IsNfC_IsNf c : IsNfC c -> IsNf c.
-Proof.
-elim=> {c} [c _ ih|n cs _ ih]; rewrite !(c2tE, c2t_appS).
-+ by constructor.
-+ by constructor=> t /mapP[c /ih ? ->].
-Qed.
-
-(* -------------------------------------------------------------------- *)
 Lemma IsNfC_sc c l : IsNfC c -> IsNfC (sc c l).
 Proof.
 move=> h; elim: h l => {c} [c _ ih|n cs _ ih] l.
@@ -1622,14 +1834,6 @@ move=> h; elim: h l => {c} [c _ ih|n cs _ ih] l.
 + rewrite sc_appS scE; constructor.
   by move=> c /mapP[c' incs ->]; apply/ih.
 Qed.
-
-(* -------------------------------------------------------------------- *)
-Lemma IsNeutral_rho ρ n l:
-  IsRhoS ρ -> IsNeutral (sc (nth ⌊0⌋ ρ n) l).
-Proof. move=> h; elim: h n => //.
-+ move=> ρ1 ρ2 t _ ih1 _ ih2 [|n] //=.
-  rewrite scE.
-Admitted.
 
 (* -------------------------------------------------------------------- *)
 Section StcCase.
