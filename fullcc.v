@@ -1400,15 +1400,73 @@ Lemma rhored_trans_appL (t t' u : closure) l :
 Proof. Admitted.
 
 (* -------------------------------------------------------------------- *)
+Lemma h_closure_eq ρ1 ρ2 t :
+  [seq h x | x <- ρ1] = [seq h x | x <- ρ2]
+  -> h (ξ [ρ1] t) = h (ξ [ρ2] t).
+Proof.
+elim: t ρ1 ρ2 => [n|t1 ih1 t2 ih2|t iht] ρ1 ρ2 eq /=.
++ have eqsz: size ρ1 = size ρ2.
+  - by move/(congr1 size): eq; rewrite !size_map => ->.
+  rewrite ![h (ξ [_] #_)]hE; rewrite eqsz; case: ifPn => //.
+  move=> ltn2; have ltn1: n < size ρ1 by rewrite eqsz.
+  by move/(congr1 ((nth 0)^~ n)): eq; rewrite !(nth_map ⌊0⌋) // => ->.
++ by rewrite 2!hE (ih1 _ _ eq) (ih2 _ _ eq) // !hE.
++ rewrite [LHS]hE [RHS]hE ![h (λλ [_])]hE; congr _.+2.
+  by apply/iht => /=; rewrite !hE eq.
+Qed.
+
 Lemma sc_rho_inv c l t : sc c l = t :> term ->
   exists2 e : ephemeral, c →*_[ρ,l] e & t = e.
-Proof. elim/clind: c l t.
-+ move=> t cs ih l u <-; elim: t l => [n|t1 ih1 t2 ih2|t iht] l.
-  * admit.
-  * admit.
-  * rewrite scE.
-+ 
-Abort.
+Proof. elim/hind: c l t; case.
++ move=> t cs ih l u <-; case: t l ih => [n|t1 t2|t] l ih.
+  * rewrite scE; case: ifPn => [ltn|gen]; last first.
+    - exists (@Ephemeral ⌊n + l - size cs⌋ (erefl true)) => //=.
+      by apply/rt_step; constructor; apply/RhoRedFree; rewrite leqNgt.
+    set c := nth _ _ _; have ccs: c \in cs by rewrite mem_nth.
+    case/(_ c _ l (sc c l) (erefl _)): ih.
+    - by rewrite [X in _ < X]hE ltn.
+    move=> e rd /esym eE; exists e => //.
+    apply/(rt_trans _ _ _ c) => //; apply/rt_step.
+    constructor; rewrite /c (set_nth_default ^0) //.
+    by apply/(RhoRedVar l ltn).
+  * rewrite scE; pose c := ξ [cs] t1 ○ ξ [cs] t2.
+    case: (ih c _ l _ (erefl _)); first by rewrite [X in _ < X]hE.
+    move=> e rd eE; exists e => //; apply/(rt_trans _ _ _ c) => //.
+    by apply/rt_step/NoCBase/RhoRedApp.
+  * rewrite scE. set c := λλ [_]; case: (ih c _ l _ (erefl _)).
+    - rewrite [X in _ < X]hE /c ![h (λλ [_])]hE !ltnS.
+      rewrite leq_eqVlt; apply/orP; left; apply/eqP.
+      by apply/h_closure_eq => /=; rewrite !hE.
+    move=> e rd eE; exists e => //; apply/(rt_trans _ _ _ c) => //.
+    by apply/rt_step/NoCBase/RhoRedLam.
++ move=> n _ l t <-; exists (@Ephemeral ⌊n⌋ (erefl true)) => /=.
+  - by apply/rt_refl. - by rewrite scE.
++ move=> n _ l t <-; exists (@Ephemeral ⌊l-n⌋ (erefl true)) => /=.
+  - by apply/rt_step/NoCBase/RhoRedPar.
+  - by rewrite scE.
++ move=> c1 c2 ih l t <-; case: c1 ih.
+  - move=> u ρ; case: u => [n|u1 u2|u] ih.
+    * rewrite 2!scE; case: ifPn => [ltn|gen]; last first.
+      + case: (ih c2 _ l _ (erefl _)).
+        - by rewrite [X in _ < X]hE ltnS leq_addl.
+        move=> e2 rd2 eE2; have: is_ephemeral (⌊n + l - size ρ⌋ ○ e2).
+        - by rewrite /= valP.
+        move=> h; exists (Ephemeral h) => /=.
+        apply/(rt_trans _ _ _ (⌊n + l - size ρ⌋ ○ c2)).
+        - apply/rt_step/NoCμ1 => /=.
+          * admit.
+          * by apply/NoCBase/RhoRedFree; rewrite leqNgt.
+        - admit.
+        admit.
+      + admit.
+    * admit.
+    * admit.
+  - admit.
+  - admit.
+  - admit.
++ admit.
++ admit.
+Admitted.
 
 (* -------------------------------------------------------------------- *)
 Derive Inversion_clear wfc_closI
