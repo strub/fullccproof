@@ -16,6 +16,9 @@ Tactic Notation "rev" "/" constr(x) :=
 Ltac ctor := constructor.
 
 (* -------------------------------------------------------------------- *)
+Axiom EM : forall P : Prop, {P}+{~P}.
+
+(* -------------------------------------------------------------------- *)
 Lemma pairE (T U : Type) (xy : T * U): (xy.1, xy.2) = xy.
 Proof. by case: xy. Qed.
 
@@ -394,6 +397,14 @@ Proof.
   + by move=> Ec; rewrite IH.
 Qed.
 
+Lemma closure_of_term_appS t ts :
+  closure_of_term (t ·! ts) =
+  closure_of_term t ○! [seq closure_of_term u | u <- ts].
+Proof.
+elim/last_ind: ts => // us u ih; rewrite !(AppS_rcons, CAppS_rcons).
+by rewrite /= ih !map_rcons CAppS_rcons.
+Qed.
+  
 (* -------------------------------------------------------------------- *)
 Inductive ephemeral : Type := Ephemeral c of is_ephemeral c.
 
@@ -884,8 +895,29 @@ Qed.
 (* ==================================================================== *)
 
 (* -------------------------------------------------------------------- *)
-Definition IsNeutral (t : term) :=
-  if t is λ [_] then false else true.
+Fixpoint IsNeutral (t : term) :=
+  match t with
+  | #_ => true
+  | t · _ => IsNeutral t
+  | _ => false
+  end.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsNeutralVar x ts : IsNeutral (#x ·! ts).
+Proof.
+elim/last_ind: ts => // ts t ih.
+by rewrite AppS_rcons /= ih.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsNeutralP t :
+  reflect (exists n ts, t = #n ·! ts) (IsNeutral t).
+Proof.
+apply: (iffP idP) => [|[x] [ts] ->]; last by apply/IsNeutralVar.
+elim: t => // [n _|t1 ih1 t2 ih2]; first by exists n, [::].
+move/ih1 => [x] [ts] ->; exists x, (rcons ts t2).
+by rewrite AppS_rcons.
+Qed.
 
 (* -------------------------------------------------------------------- *)
 Inductive IsWhnf : term -> Prop :=
@@ -982,13 +1014,12 @@ Lemma Noμ2Var x ts t t' us :
     (forall z, z \in ts -> IsNf z) -> t → t'
   -> (#x ·! ts · t ·! us) → (#x ·! ts · t' ·! us).
 Proof.
-move=> nf r; elim/last_ind: us => [|us u ih]//=.
+move=> nf r; elim/last_ind: us => [|us u ih] //=.
   apply/Noν => //; first by apply/IsNfVar.
-  by elim/last_ind: {nf} ts => // zs z _; rewrite AppS_rcons.
+  by elim/last_ind: {nf} ts => // zs z ih; rewrite AppS_rcons.
 rewrite !AppS_rcons; apply/Noμ2 => //.
-  by rewrite -AppS_rcons -AppS_cat; ctor.
-rewrite -AppS_rcons -AppS_cat; elim/last_ind: (_ ++ _) => //.
-by move=> zs z ihz; rewrite AppS_rcons .
++ by rewrite -!(AppS_rcons, AppS_cat); apply/IsWhnfVar.
++ by rewrite -!(AppS_rcons, AppS_cat); apply/IsNeutralVar.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -1017,8 +1048,26 @@ by inversion 1 using nobeta_lam; [inversion 1 | eauto].
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Definition IsNeutralC (c : closure) :=
-  if c is λλ [_] then false else true.
+Fixpoint IsNeutralC (c : closure) :=
+  match c with
+  | ⌊_⌋ => true
+  | c ○ _ => IsNeutralC c
+  | _ => false
+  end.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsNeutralCP (c : closure) :
+  reflect
+    (exists n, exists cs, c = ⌊n⌋ ○! cs)
+    (IsNeutralC c).
+Proof.
+apply: (iffP idP); last first.
++ case=> [n] [cs] ->; elim/last_ind: cs => // cs c' ih.
+  by rewrite CAppS_rcons /= ih.
+elim: c => // [n _|c1 ih1 c2 ih2]; first by exists n, [::].
+move/ih1 => [n] [cs] ->; exists n, (rcons cs c2).
+by rewrite CAppS_rcons.
+Qed.
 
 (* -------------------------------------------------------------------- *)
 Inductive IsWhnfC : closure -> Prop :=
@@ -1518,12 +1567,10 @@ Qed.
 (* -------------------------------------------------------------------- *)
 Lemma IsNeutral_IsNeutralC (e : ephemeral) : IsNeutral e -> IsNeutralC e.
 Proof.
-suff: forall t, IsNeutral t ->
-  forall (e : ephemeral), t = e :> term -> IsNeutralC e.
-+ by move=> h hc; apply/(h _ hc).
-case=> {e} //= [n _|t1 t2 _]; case => /=.
-+ by case=> // c _; rewrite c2tE.
-+ by case=> // c _; rewrite c2tE.
+case: e => c ee /IsNeutralP [n] [ts] /= cE.
+apply/IsNeutralCP; exists n, [seq closure_of_term t | t <- ts].
+move/(congr1 closure_of_term): cE; rewrite closure_of_term_appS /=.
+by move=> <-; rewrite /term_of_closure_r -lock term_of_closureK.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -1532,7 +1579,8 @@ Proof.
 suff: forall w, IsNf w -> forall t u, w = t · u -> IsNeutral w.
 + by move=> h1 h2; apply/h1.
 move=> w; case => //= x ts _ _ _ _.
-by elim/last_ind: ts => // ts t' _; rewrite AppS_rcons.
+elim/last_ind: ts => // ts t' _; rewrite AppS_rcons.
+by rewrite -AppS_rcons; apply/IsNeutralVar.
 Qed.
 
 (* -------------------------------------------------------------------- *)
@@ -1561,6 +1609,111 @@ elim: t ρ1 ρ2 => [n|t1 ih1 t2 ih2|t iht] ρ1 ρ2 eq /=.
   by apply/iht => /=; rewrite !hE eq.
 Qed.
 
+(* -------------------------------------------------------------------- *)
+Derive Inversion_clear rhored_app
+  with (forall c1 c2 c l, c1 ○ c2 →_[ρ,l] c)
+  Sort Prop.
+  
+Derive Inversion_clear rhored_var
+  with (forall n c l, ⌊n⌋ →_[ρ,l] c)
+  Sort Prop.
+
+Derive Inversion_clear rhored_base_var
+  with (forall n c l, ⌊n⌋ ⇀_[ρ,l] c)
+  Sort Prop.
+
+Lemma iswhnfc_appI c :
+  IsWhnfC c -> IsNeutralC c ->
+    exists n, exists cs, c = ⌊n⌋ ○! cs.
+Proof. by case=> // n cs _; eauto. Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma isneutralc_rhored c1 c2 l :
+  IsNeutralC c1 -> c1 →_[ρ,l] c2 -> IsNeutralC c2.
+Proof.
+case/IsNeutralCP => [x] [cs] ->; elim/last_ind: cs c2 => /= [|cs c ih] c2.
++ by elim/rhored_var; elim/rhored_base_var.
+rewrite CAppS_rcons; elim/rhored_app.
++ by inversion 1.
++ by move=> c1' []; constructor.
++ by move=> c1' _ _ /ih.
++ move=> c2' _ _ _; rewrite -CAppS_rcons; apply/IsNeutralCP.
+  by exists x, (rcons cs c2').
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsWhnfC_appI c1 c2 : IsWhnfC (c1 ○ c2) -> IsWhnfC c1.
+Proof.
+elim/iswhnfI => // _ n; elim/last_ind => // cs c _.
+by rewrite CAppS_rcons => -[<- _]; constructor.
+Qed.  
+
+(* -------------------------------------------------------------------- *)
+Derive Inversion IsNfCI
+  with (forall c, IsNfC c)
+  Sort Prop.
+
+Lemma IsNfC_appI c1 c2 : IsNfC (c1 ○ c2) ->
+  exists n cs, c1 ○ c2 = ⌊n⌋ ○! cs.
+Proof.
+elim/IsNfCI => // _ n cs _.
+by elim/last_ind: cs => // cs c _ _; eauto.
+Qed.
+
+(*
+(* -------------------------------------------------------------------- *)
+Lemma iswhnfc_rhored c1 c1_1 c1_2 c2 l :
+  IsWhnfC c1 -> c1 →_[ρ,l] c2 -> c1 = (c1_1 ○ c1_2) -> IsWhnfC c2.
+Proof.
+move=> he h; case: h he c1_1 c1_2 => {l c1 c2} //.
++ by move=> l c1 c2 rd _ ???; subst c1; inversion rd.
+Is+ by move=> ???? ? _ /IsWhnfC_appI.
++ move=> l c1 c1' c2 wh nt rd h; elim/iswhnfI: h nt => //.
+  move=> _ n cs; elim/last_ind: cs rd => // cs c _ rd.
+  rewrite CAppS_rcons => -[c1E _]; subst c1 => _ _ _ _ {wh}.
+  have: exists cs', c1' = ⌊n⌋ ○! cs'.
+  * elim/last_ind: cs c1' rd => /= [|cs c' ih] c1'.
+    - by elim/rhored_var; elim/rhored_base_var.
+    rewrite CAppS_rcons; elim/rhored_app.
+    - by inversion 1.    
+    - move=> c3 _ /ih [cs' ->]; exists (rcons cs' c').
+      by rewrite CAppS_rcons.      
+    - move=> c3 _ _ /ih [cs' ->]; exists (rcons cs' c').
+      by rewrite CAppS_rcons.      
+    - move=> c2' _ _ _; exists (rcons cs c2').
+      by rewrite CAppS_rcons.      
+    by case=> cs' ->; rewrite -CAppS_rcons; constructor.
++ move=> l c1 c1' c2 nf nt rd h; elim/iswhnfI: h nt => //.
+  move=> _ n cs; elim/last_ind: cs rd => // cs c _ rd.
+  rewrite CAppS_rcons => -[c1E _]; subst c1 => _ _ _ _ {nf}.
+  by rewrite -CAppS_rcons; constructor.
+Qed.
+ *)
+
+(* -------------------------------------------------------------------- *)
+Lemma IsWhnfCN_rhored c c1 c2 l :
+  ~ IsWhnfC c -> c = c1 ○ c2 -> exists c', c →_[ρ,l] c'.
+Proof.
+elim/clind: c l => //.
++ move=> c'1 c'2 ih1 ih2 l h [??]; subst c'1 c'2.
+
+  
++ move=> t ρ ih l _; case: t => [n|t u|t].
+  * case: (ltnP n (size ρ)) => [lt|ge].
+    - by exists (nth ^0 ρ n); do 2! constructor.
+    - by exists ⌊n + l - size ρ⌋; do 2! constructor.
+  * exists (ξ [ρ] t  ○ ξ [ρ] u); do 2! constructor.
+  * by exists (λλ [ξ [^l.+1 :: ρ] t]); do 2! constructor.
++ by move=> n l _; exists ⌊l - n⌋; do 2! constructor.
++ move=> n l []; apply/(@IsWhnfCVar _ [::]).
++ admit.
++ move=> c ih l h; case: (EM (IsWhnfC c)); last first.
+  - by move/(ih l.+1) => [c' rd]; exists (λλ [c']); apply/NoCξ.
+  move=> h'; case: h' h.
+  - move=> t ρ _.
+Admitted.
+
+(* -------------------------------------------------------------------- *)
 Lemma sc_rho_inv c l t : IsNf t -> sc c l = t :> term ->
   exists2 e : ephemeral, c →*_[ρ,l] e & t = e.
 Proof. elim/hind: c l t; case.
@@ -1652,7 +1805,10 @@ Proof. elim/hind: c l t; case.
       by apply/NoCBase/RhoRedPar.
     * by apply/rhored_trans_appR => //; apply/(@IsNfCVar _ [::]).
 
-  - move=> c c1 tE ih; case: (ih (c ○ c1) _ l _ _ (erefl _)).
+  - move=> c c1 tE ih; case: (EM (IsWhnf (c ○ c1))); last first.
+    * 
+
+    move=> c c1 tE ih; case: (ih (c ○ c1) _ l _ _ (erefl _)).
     * by rewrite [X in _ < X]hE ltnS leq_addr.
     * by move: nf; rewrite -tE scE c2tE => /IsNf_AppL.
     move=> e1 rd1 eE1; case: (ih c2 _ l _ _ (erefl _)).
@@ -1660,6 +1816,9 @@ Proof. elim/hind: c l t; case.
     * by move: nf; rewrite -tE scE c2tE => /IsNf_AppR.
     move=> e2 rd2 eE2; have h: is_ephemeral (e1 ○ e2).
     * by rewrite /= !valP.
+
+
+
     exists (Ephemeral h) => /=; last first.
     * by rewrite scE !c2tE eE1 eE2.
     have nfe1: IsNfC e1.
@@ -1676,7 +1835,27 @@ Proof. elim/hind: c l t; case.
           * by apply/valP.
           by apply/andP; split; apply/sc_is_ephemeral.
         by move/IsNeutral_IsNeutralC.
-      - admit.
+      - rewrite /= in h; case/andP: h => he1 he2 {rd2 eE2 he2}.
+        
+        
+        move: rd1.
+
+          * have is_neu1: IsNeutralC e1.
+      - case: {rd1 h} e1 nfe1 eE1 => /= e; case: e => //.
+        + move=> c1' c2' h1 h2 h3.
+          case/IsNfC_appI: h2 => [n] [cs] ->.
+          by apply/IsNeutralCP; exists n, cs.
+        + by move=> ? _ _; rewrite scE !c2tE.
+      have: IsNeutralC (c ○ c1).
+      * move: is_neu1; move: eE1; rewrite scE !c2tE.
+        case: e1 rd1 h nfe1 => e1 /= ee1 rd1 /andP[hee1 hee2] [].
+        - by move=> ? _; rewrite c2tE.
+          move=> n cs _; elim/last_ind: cs => /=.
+          + by rewrite c2tE.
+          move=> cs c' _; rewrite CAppS_rcons !c2tE => -[].
+          case: is
+          
+
 + by move=> c tE _; move: nf; rewrite -tE 2!scE !c2tE => /NIsNf_LamApp.
 + move=> c ih l t nf tE; case: (ih c _ l.+1 _ _ (erefl _)).
   * by rewrite [X in _ < X]hE ltnS.
