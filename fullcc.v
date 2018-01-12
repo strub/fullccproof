@@ -960,6 +960,50 @@ Inductive IsNf : term -> Prop :=
 | IsNfVar : forall x ts, (forall t, t \in ts -> IsNf t) -> IsNf (#x ·! ts).
 
 (* -------------------------------------------------------------------- *)
+Inductive IsWhnfC : closure -> Prop :=
+| IsWhnfCLam : forall c, IsWhnfC (λλ [c])
+| IsWhnfCVar : forall n cs, IsWhnfC (⌊n⌋ ○! cs).
+
+(* -------------------------------------------------------------------- *)
+Inductive IsNfC : closure -> Prop :=
+| IsNfCLam : forall c, IsNfC c -> IsNfC (λλ [c])
+| IsNfCVar : forall n cs, (forall c, c \in cs -> IsNfC c) -> IsNfC (⌊n⌋ ○! cs).
+
+(* -------------------------------------------------------------------- *)
+Inductive IsStc : closure -> Prop :=
+| Stc1 n : IsStc ⌊n⌋
+
+| Stc2 n (ρts : seq (seq closure * term)) :
+    IsStc (^n ○! [seq ξ[ρt.1] ρt.2 | ρt <- ρts])
+
+| Stc3 ρ t (ρts : seq (seq closure * term)) :
+    IsStc (ξ [ρ] t ○! [seq ξ[ρt.1] ρt.2 | ρt <- ρts])
+
+| Stc4 c :
+    IsStc c -> IsStc (λλ [c])
+
+| Stc5 n nfc c ρts :
+    let cs := [seq ξ [ρt.1] ρt.2 | ρt <- ρts] in
+       IsStc c
+    -> (forall nf, nf \in nfc -> IsNfC nf)
+    -> IsStc (⌊n⌋ ○! nfc ○ c ○! cs).
+
+(* -------------------------------------------------------------------- *)
+Inductive IsExc : closure -> Prop :=
+| Exc1 n ρ t1 ρts :
+    let cs := [seq ξ [ρt.1] ρt.2 | ρt <- ρts] in
+    size ρts != 0 -> IsExc ((λλ [ξ [^n :: ρ] t1]) ○! cs)
+
+| Exc2 c :
+    IsExc c -> IsExc (λλ [c])
+
+| Exc3 n nfc c ρts :
+    let cs := [seq ξ [ρt.1] ρt.2 | ρt <- ρts] in
+       IsExc c
+    -> (forall nf, nf \in nfc -> IsNfC nf)
+    -> IsExc (⌊n⌋ ○! nfc ○ c ○! cs).
+
+(* -------------------------------------------------------------------- *)
 Reserved Notation "t1 ⇀ t2"   (at level 60, no associativity, format "t1  ⇀  t2").
 Reserved Notation "t1 ⇀_β t2" (at level 60, no associativity, format "t1  ⇀_β  t2").
 Reserved Notation "t1 → t2"   (at level 60, no associativity, format "t1  →  t2").
@@ -1068,62 +1112,6 @@ elim: c => // [n _|c1 ih1 c2 ih2]; first by exists n, [::].
 move/ih1 => [n] [cs] ->; exists n, (rcons cs c2).
 by rewrite CAppS_rcons.
 Qed.
-
-(* -------------------------------------------------------------------- *)
-Inductive IsWhnfC : closure -> Prop :=
-| IsWhnfCLam : forall t ρ, IsWhnfC (λλ [ξ [ρ] t])
-| IsWhnfCVar : forall n cs, IsWhnfC (⌊n⌋ ○! cs).
-
-(* -------------------------------------------------------------------- *)
-Inductive IsNfC : closure -> Prop :=
-| IsNfCLam : forall c, IsNfC c -> IsNfC (λλ [c])
-| IsNfCVar : forall n cs, (forall c, c \in cs -> IsNfC c) -> IsNfC (⌊n⌋ ○! cs).
-
-(* -------------------------------------------------------------------- *)
-Inductive IsRhoS : seq closure -> Prop :=
-| RhoS1 ρ1 ρ2 t :
-    IsRhoS ρ1 -> IsRhoS ρ2 -> IsRhoS (ξ [ρ1] t :: ρ2)
-
-| RhoS2 n ρ :
-    IsRhoS ρ -> IsRhoS (^n :: ρ)
-
-| RhoS3 :
-    IsRhoS [::].
-
-(* -------------------------------------------------------------------- *)
-Inductive IsStc : closure -> Prop :=
-| Stc1 ρ t (ρts : seq (seq closure * term)) :
-       IsRhoS ρ
-    -> (forall ρt, ρt \in ρts -> IsRhoS ρt.1)
-    -> IsStc (ξ [ρ] t ○! [seq ξ[ρt.1] ρt.2 | ρt <- ρts])
-
-| Stc2 c :
-    IsStc c -> IsStc (λλ [c])
-
-| Stc3 n nfc c ρts :
-    let cs := [seq ξ [ρt.1] ρt.2 | ρt <- ρts] in
-       IsStc c
-    -> (forall nf, nf \in nfc -> IsNfC nf)
-    -> (forall ρt, ρt \in ρts -> IsRhoS ρt.1)
-    -> IsStc (⌊n⌋ ○! nfc ○ c ○! cs).
-
-(* -------------------------------------------------------------------- *)
-Inductive IsExc : closure -> Prop :=
-| Exc1 n ρ t1 ρts :
-    let cs := [seq ξ [ρt.1] ρt.2 | ρt <- ρts] in
-       IsRhoS ρ -> size ρts != 0
-    -> (forall ρt, ρt \in ρts -> IsRhoS ρt.1)
-    -> IsExc ((λλ [ξ [^n :: ρ] t1]) ○! cs)
-
-| Exc2 c :
-    IsExc c -> IsExc (λλ [c])
-
-| Exc3 n nfc c ρts :
-    let cs := [seq ξ [ρt.1] ρt.2 | ρt <- ρts] in
-       IsExc c
-    -> (forall nf, nf \in nfc -> IsNfC nf)
-    -> (forall ρt, ρt \in ρts -> IsRhoS ρt.1)
-    -> IsExc (⌊n⌋ ○! nfc ○ c ○! cs).
 
 (* -------------------------------------------------------------------- *)
 Reserved Notation "t ⇀_[ l ] u" (at level 60, no associativity, format "t  ⇀_[ l ]  u").
@@ -1394,6 +1382,571 @@ rewrite map_rcons CAppS_rcons; rev/rwb_app.
 Qed.
 
 (* -------------------------------------------------------------------- *)
+Derive Inversion_clear ρ_closI
+  with (forall ρ t l c, ξ [ρ] t →_[ρ,l] c)
+  Sort Prop.
+
+Derive Inversion_clear ρ_appI
+  with (forall c1 c2 l c, c1 ○ c2 →_[ρ,l] c)
+  Sort Prop.
+
+Derive Inversion_clear ρ_idxI
+  with (forall i c l, ^i →_[ρ,l] c).
+
+Derive Inversion_clear ρ1_closfreevarI
+  with (forall ρ x l c, ξ [ρ] #x ⇀_[ρ,l] c)
+  Sort Prop.
+
+Derive Inversion_clear ρ1_closappI
+  with (forall ρ t1 t2 l c, ξ [ρ] (t1 · t2) ⇀_[ρ,l] c)
+  Sort Prop.
+
+Derive Inversion_clear ρ1_closlamI
+  with (forall ρ t l c, ξ [ρ] (λ [t]) ⇀_[ρ,l] c)
+  Sort Prop.
+
+Derive Inversion_clear ρ1_closI
+  with (forall ρ t l c, ξ [ρ] t ⇀_[ρ,l] c)
+  Sort Prop.
+
+Derive Inversion_clear ρ1_idxI
+  with (forall i c l, ^i ⇀_[ρ,l] c).
+
+(* -------------------------------------------------------------------- *)
+Derive Inversion_clear IsNfCI with (forall c, IsNfC c) Sort Prop.
+Derive Inversion_clear IsWhnfCI with (forall c, IsWhnfC c) Sort Prop.
+
+(* -------------------------------------------------------------------- *)
+Derive Inversion IsNfC_lblI
+  with (forall i, IsNfC ^i)
+  Sort Prop.
+
+Lemma NIsNfC_lbl i : ~ IsNfC ^i.
+Proof.
+elim/IsNfC_lblI => _ n cs _; elim/last_ind: cs => //.
+by move=> cs c _; rewrite CAppS_rcons.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Derive Inversion IsNfC_appI
+  with (forall c1 c2, IsNfC (c1 ○ c2))
+  Sort Prop.
+
+Lemma NIsNfC_closappI ρ t c : ~ (IsNfC ((ξ [ρ] t) ○ c)).
+Proof.
+elim/IsNfC_appI=> _ n cs _; elim/last_ind: cs c => //.
+move=> cs c' _ c; rewrite CAppS_rcons => -[].
+by elim/last_ind: cs => // cs c'' _; rewrite CAppS_rcons.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Derive Inversion IsNfC_lamI
+  with (forall c, IsNfC (λλ [c]))
+  Sort Prop.
+
+(* -------------------------------------------------------------------- *)
+Derive Inversion IsNfC_closI
+  with (forall ρ t, IsNfC (ξ [ρ] t))
+  Sort Prop.
+
+Lemma NIsNfC_clos ρ t : ~ IsNfC (ξ [ρ] t).
+Proof.
+elim/IsNfC_closI => _ n cs _; elim/last_ind: cs => //.
+by move=> cs c _; rewrite CAppS_rcons.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma ρ_clos ρ t l : exists c, ξ [ρ] t →_[ρ,l] c.
+Proof.
+case: t => [n|t1 t2|t]; first case: (ltnP n (size ρ)) => h.
++ by eexists; apply/NoCBase/RhoRedVar.
++ by eexists; apply/NoCBase/RhoRedFree.
++ by eexists; apply/NoCBase; econstructor.
++ by eexists; apply/NoCBase; econstructor.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsNfC_IsEph c : IsNfC c -> is_ephemeral c.
+Proof.
+elim=> // n; elim/last_ind=> // cs c' ih h1 h2.
+rewrite CAppS_rcons /=; rewrite ih ?h2 //.
+* by rewrite mem_rcons mem_head.
+* by move=> c'' c''in; apply/h1; rewrite mem_rcons mem_behead.
+* by move=> c'' c''in; apply/h2; rewrite mem_rcons mem_behead.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma L_5_11 l (S S' : closure) (t : term) :
+     IsStc S -> ~ IsWhnfC S -> IsWhnf t
+  -> wfc l S -> σc S l = t :> term -> S →_[ρ,l] S'
+  -> (IsStc S' /\ (IsNfC S' -> S' = t :> term)).
+Proof.
+elim/hind: S S' t => S ih S' t h; elim: h ih=> [n|n|||].
++ by move=> _ []; apply/(IsWhnfCVar _ [::]).
+
++ move=> ρts _ _ wft hwf /=; set a := map _ _.
+  have: ^n ○! a →_[ρ,l] S' ->
+    exists2 c', ^n →_[ρ,l] c' & S' = c' ○! a.
+  + rewrite {}/a; elim/last_ind: {+}ρts S' => //=.
+    * move=> S'; elim/ρ_idxI; elim/ρ1_idxI.
+      by eexists; try reflexivity; do 2! constructor.
+    move=> ρts' ρt' ih' S1'; rewrite map_rcons CAppS_rcons.
+    (elim/ρ_appI; first by inversion 1); first last.
+    * move=> x h; absurd False => // {x}; move: h.
+      set Z := (_ ○! _) => h; move: (erefl Z).
+      rewrite {2}/Z; elim/IsNfCI: h => //.
+      - move=> c' _; elim/last_ind: {+}ρts => //.
+        elim/last_ind: {+}ρts' => // ρts'' ρt'' _.
+        by rewrite map_rcons CAppS_rcons.
+      - move=> n' cs _; elim/last_ind: {+}ρts' cs => /=.
+        + by elim/last_ind => // cs' c' _; rewrite CAppS_rcons.
+        + move=> ρts'' ρt'' ih''; elim/last_ind => //=.
+          - by rewrite map_rcons CAppS_rcons.
+          - move=> cs' c' _; rewrite map_rcons !CAppS_rcons.
+            by case=> /ih''.
+    * move=> x h; absurd False => // {x}; move: h.
+      set Z := (_ ○! _) => h; move: (erefl Z).
+      rewrite {2}/Z; elim/IsWhnfCI: h => //.
+      - move=> c; elim/last_ind: {+}ρts => //.
+        elim/last_ind: {+}ρts' => // ρts'' ρt'' _.
+        by rewrite map_rcons CAppS_rcons.
+      - move=> n' cs; elim/last_ind: {+}ρts' cs => /=.
+        + by elim/last_ind => // cs' c' _; rewrite CAppS_rcons.
+        + move=> ρts'' ρt'' ih''; elim/last_ind => //=.
+          - by rewrite map_rcons CAppS_rcons.
+          - move=> cs' c' _; rewrite map_rcons !CAppS_rcons.
+            by case=> /ih''.
+    * move=> c1' _ /ih' [c' h6 h7]; exists c' => //.
+      by rewrite CAppS_rcons h7.
+  move=> h6 h7 h8; have := h6 h8 => -[c' rd ->].
+  elim/ρ_idxI: rd; elim/ρ1_idxI; split.
+  * rewrite /a; case: {+}ρts => /=; first constructor.
+    move=> c'' cs'; apply/(@Stc5  _ [::]) => //.
+    by apply/(Stc3 _ _ [::]).
+  * subst a; rewrite -h7; elim/last_ind: {+}ρts => /=.
+    - by move=> _; rewrite scE.
+    move=> ρts'' ρt'' _; set Z := (_ ○! _) => h; move: (erefl Z).
+    rewrite {2}/Z; elim/IsNfCI: h => //.
+    - by move=> c'' _; rewrite map_rcons CAppS_rcons.
+    - move=> n' cs h; elim/last_ind: cs h => /=.
+      + by rewrite map_rcons CAppS_rcons.
+      move=> cs'' c'' _ h; rewrite map_rcons !CAppS_rcons.
+      case=> _ ?; subst c''; absurd False => //.
+      move/(_ (ξ [ρt''.1] ρt''.2)): h.
+      rewrite mem_rcons mem_head => -/(_ (erefl true)).
+      by move/IsNfC_IsEph.
++ move=> ρ u; elim/last_ind =>  [|ρts ρt _] ih h1 h2 /= hwf tE; rewrite -tE.
+  * case: {ih tE h1 h2} u hwf => [n|u1 u2|u].
+    - move=> hwf; elim/ρ_closI; elim/ρ1_closfreevarI => h.
+      + rewrite scE h; elim/wfc_clos: hwf.
+        move/mem_wf => /(_ _ (mem_nth _ h)) -/(_ ^0).
+        case=> [[i] -> _|[v] [ρ'] [l'] [-> _ _]].
+        * by split; [apply/(@Stc2 _ [::]) | case/NIsNfC_lbl].
+        * split; first by apply/(@Stc3 _ _ [::]).
+          by case/NIsNfC_clos.
+      + split; first by constructor.
+          by rewrite scE ltnNge h.
+    - move=> _; elim/ρ_closI; elim/ρ1_closappI; split.
+      + by apply/(@Stc3 _ _ [:: (ρ, u2)]).
+      + by case/NIsNfC_closappI.
+    - move=> _; elim/ρ_closI; elim/ρ1_closlamI; split.
+      + by constructor; apply/(@Stc3 _ _ [::]).
+      + elim/IsNfC_lamI.
+        * by move=> _ ?; case/NIsNfC_clos.
+        * move=> _ n cs _; elim/last_ind: cs => // cs c' _.
+          by rewrite CAppS_rcons.
+  * move: hwf h1 h2; rewrite map_rcons CAppS_rcons.
+    set S1 := _ ○! _ => hwf h1 h2 h; rewrite scE.
+    (elim/ρ_appI: h; first by inversion 1); first last.
+    + move=> x nfc1 _ _; absurd False => // {x}.
+      - move: (erefl S1); rewrite {2}/S1; elim/IsNfCI: nfc1.
+        + move=> c' _; elim/last_ind: {+}ρts => // ρts' ρt' _.
+          by rewrite map_rcons CAppS_rcons.
+        + move=> n cs _; elim/last_ind: cs {ih tE S1 hwf h1 h2} ρts => /=.
+          * move=> ρts /=; elim/last_ind: ρts => // ρts ρt' _.
+            by rewrite map_rcons CAppS_rcons.
+          * move=> cs c' ih' ρts; rewrite CAppS_rcons.
+            elim/last_ind: ρts => [|ρts ρt' _] //.
+            by rewrite map_rcons CAppS_rcons => -[/ih'].
+      - move=> x nfc1 _ _; absurd False => // {x}.
+        move: (erefl S1); rewrite {2}/S1; elim/IsWhnfCI: nfc1.
+        + move=> c'; elim/last_ind: {ih tE S1 hwf h1 h2} ρts => //.
+          by move=> ρts ρt' _; rewrite map_rcons CAppS_rcons.
+        + move=> n cs; elim/last_ind: cs {ih tE S1 hwf h1 h2} ρts.
+          * move=> ρts /=; elim/last_ind: ρts => // ρts ρt' _.
+            by rewrite map_rcons CAppS_rcons.
+          * move=> cs c' ih' ρts; rewrite CAppS_rcons.
+            elim/last_ind: ρts => [|ρts ρt' _] //.
+            by rewrite map_rcons CAppS_rcons => -[/ih'].
+      - move=> S1' h3 rd; move: tE; rewrite sc_appS.
+        rewrite !map_rcons /= CAppS_rcons /= !c2tE.
+        case: t h2 => // t1 t2 h2 [t1E t2E].
+        elim: (ih S1 _ S1' t1) => //; first last.
+        + by rewrite /S1 /= sc_appS.
+        + by inversion hwf.
+        + apply/IsWhnfP; move/IsWhnfP: h2 => /=.
+          by case: {t1E} t1 => //.
+        + by constructor.
+        + rewrite /S1 map_rcons CAppS_rcons [X in _ < X]hE.
+          by rewrite ltnS leq_addr.
+        + move=> h4 h5; split.
+          - move: rd; rewrite /S1; set a := map _ _.
+            have: ξ [ρ] u ○! a →_[ρ,l] S1' ->
+              exists2 c', ξ [ρ] u →_[ρ,l] c' & S1' = c' ○! a.
+            + rewrite {}/a; elim/last_ind: {+}ρts {h4 h5} S1' => //=.
+              * by case: (ρ_clos ρ u l) => c' h; eexists; try eassumption.
+              move=> ρts' ρt' ih' S1'; rewrite map_rcons CAppS_rcons.
+              (elim/ρ_appI; first by inversion 1); first last.
+              * move=> x h; absurd False => // {x}; move: h.
+                set Z := (_ ○! _) => h; move: (erefl Z).
+                rewrite {2}/Z; elim/IsNfCI: h => //.
+                - move=> c' _; elim/last_ind: {+}ρts => //.
+                  elim/last_ind: {+}ρts' => // ρts'' ρt'' _.
+                  by rewrite map_rcons CAppS_rcons.
+                - move=> n cs _; elim/last_ind: {+}ρts' cs => /=.
+                  + by elim/last_ind => // cs' c' _; rewrite CAppS_rcons.
+                  + move=> ρts'' ρt'' ih''; elim/last_ind => //=.
+                    - by rewrite map_rcons CAppS_rcons.
+                    - move=> cs' c' _; rewrite map_rcons !CAppS_rcons.
+                      by case=> /ih''.
+              * move=> x h; absurd False => // {x}; move: h.
+                set Z := (_ ○! _) => h; move: (erefl Z).
+                rewrite {2}/Z; elim/IsWhnfCI: h => //.
+                - move=> c; elim/last_ind: {+}ρts => //.
+                  elim/last_ind: {+}ρts' => // ρts'' ρt'' _.
+                  by rewrite map_rcons CAppS_rcons.
+                - move=> n cs; elim/last_ind: {+}ρts' cs => /=.
+                  + by elim/last_ind => // cs' c' _; rewrite CAppS_rcons.
+                  + move=> ρts'' ρt'' ih''; elim/last_ind => //=.
+                    - by rewrite map_rcons CAppS_rcons.
+                    - move=> cs' c' _; rewrite map_rcons !CAppS_rcons.
+                      by case=> /ih''.
+              * move=> c1' _ /ih' [c' h6 h7]; exists c' => //.
+                by rewrite CAppS_rcons h7.
+            move=> h6 h7; have := h6 h7 => -[c' rdc' E]; rewrite E.
+            elim/ρ_closI: rdc' {h6} h7 E t1E; elim/ρ1_closI.
+            + move=> n lt _ _ _; elim/wfc_app: hwf => hwf _.
+              move/wfc_appsl: hwf; elim/wfc_clos => /mem_wf.
+              move=> /(_ _ (mem_nth _ lt)) -/(_ ^0) -[].
+              - case=> i -> _; have := Stc2 i.+1 (rcons ρts (ρt.1, ρt.2)).
+                by rewrite map_rcons /= -/a -CAppS_rcons.
+              - case=> [t] [ρ'] [_] [-> _ _].
+                have := Stc3 ρ' t (rcons ρts (ρt.1, ρt.2)).
+                by rewrite map_rcons /= -/a -CAppS_rcons.
+            + move=> n _ _ _ _; rewrite -CAppS_rcons /a -map_rcons.
+              rewrite headI map_cons CAppS_cons; apply/(@Stc5 _ [::]) => //.
+              by apply/(@Stc3 _ _ [::]).
+            + move=> t' u' _ _ _; rewrite -CAppS_cons -CAppS_rcons.
+              rewrite /a -(map_cons _ (ρ, u')) -map_rcons.
+              by apply/Stc3.
+            + move=> t' h7 S1'E t1E; absurd False => //.
+              move: h2; rewrite -t1E 2!scE c2t_appS.
+              inversion 1 => //; move: H0; elim/last_ind: ts => //.
+              move=> ts t _; rewrite AppS_rcons; case.
+              move=> h; absurd False => //; move: h.
+              elim/last_ind: {+}ρts ts => [|ρts' ρt' ih'] ts.
+              - elim/last_ind: ts => //=; first by rewrite c2tE.
+                by move=> ts t'' _; rewrite AppS_rcons c2tE.
+              - elim/last_ind: ts => [|ts t'' _] /=.
+                + by rewrite !map_rcons !c2tE AppS_rcons.
+                + rewrite AppS_rcons !map_rcons !c2tE AppS_rcons.
+                  by case=> h; case/(_ ts): ih'; rewrite !c2tE.
+            + by move/IsNfC_IsEph => /=; rewrite andbF.
++ by move=> c _ _ _ h; absurd False => //; apply/h; constructor.
++ move=> n cs c ρts csE _ _ _ _ [].
+  by rewrite -CAppS_rcons -CAppS_cat; constructor.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma h_closure_eq ρ1 ρ2 t :
+  [seq h x | x <- ρ1] = [seq h x | x <- ρ2]
+  -> h (ξ [ρ1] t) = h (ξ [ρ2] t).
+Proof.
+elim: t ρ1 ρ2 => [n|t1 ih1 t2 ih2|t iht] ρ1 ρ2 eq /=.
++ have eqsz: size ρ1 = size ρ2.
+  - by move/(congr1 size): eq; rewrite !size_map => ->.
+  rewrite ![h (ξ [_] #_)]hE; rewrite eqsz; case: ifPn => //.
+  move=> ltn2; have ltn1: n < size ρ1 by rewrite eqsz.
+  by move/(congr1 ((nth 0)^~ n)): eq; rewrite !(nth_map ⌊0⌋) // => ->.
++ by rewrite 2!hE (ih1 _ _ eq) (ih2 _ _ eq) // !hE.
++ rewrite [LHS]hE [RHS]hE ![h (λλ [_])]hE; congr _.+2.
+  by apply/iht => /=; rewrite !hE eq.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Derive Inversion_clear NoRed_app_r
+  with (forall t u v, t · u → v)
+  Sort Prop.
+
+Derive Inversion inv_beta
+  with (forall t u v, t · u ⇀_β v)
+  Sort Prop.
+
+Lemma IsNf_nf t : IsNf t -> forall u, ~ t → u.
+Proof.
+elim=> {t} [t _ ih|n ts _ ih].
++ by move=> u /inv_noredbeta_lam[t' [/ih]].
++ move=> u rd; elim/last_ind: ts u ih rd => /= [|ts t ihts] u ih.
+  - by move=> /inv_noredbeta_var.
+  rewrite AppS_rcons; inversion 1 using NoRed_app_r.
+  - move=> {rd} rd; inversion rd using inv_beta.
+    move=> {rd} _ t' u'; elim/last_ind: ts {ihts ih} => //.
+    by move=> s x _; rewrite AppS_rcons.
+  - by move=> t' /(_ (IsWhnfVar _ _)).
+  - move=> t' _ _ /ihts; apply => v ints; apply/ih.
+    by rewrite mem_rcons in_cons ints orbT.
+  - by move=> v _ _; apply/ih; rewrite mem_rcons in_cons eqxx.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsNfC_IsNf (c : closure) : IsNfC c -> IsNf c.
+Proof.
+elim=> {c} [c _ h|c cs _ ih]; first by rewrite c2tE; constructor.
+rewrite c2t_appS c2tE; constructor.
+by move=> t /mapP[c' /ih h ->].
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma L_5_12 l (S S' : closure) (t : term) :
+     IsStc S -> IsWhnfC S -> ~ IsNfC S -> IsNf t
+  -> wfc l S -> σc S l = t :> term -> S →_[ρ,l] S' -> IsStc S'
+  ->    (~ IsNfC S' -> IsWhnfC S')
+     /\ (IsNfC S' -> S' = t :> term).
+Proof. Admitted.
+
+(* -------------------------------------------------------------------- *)
+Lemma ephemeral_lamI (e : ephemeral) t :
+  e = λ [t] :> term -> exists2 e' : ephemeral,
+    e = λλ [e'] :> closure & e' = t :> term.
+Proof.
+case: e; case=> //=.
+- by move=> ? _; rewrite c2tE.
+- by move=> ?? _; rewrite c2tE.
+move=> c ce; rewrite c2tE => -[<-].
+by exists (Ephemeral ce).
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma ephemeral_varappI (e : ephemeral) x ts :
+  e = #x ·! ts :> term -> exists2 es : seq ephemeral,
+      e = ⌊x⌋ ○! [seq closure_of_ephemeral c | c <- es] :> closure
+    & [seq term_of_closure_r (closure_of_ephemeral c) | c <- es] = ts.
+Proof.
+move=> eE; pose us := [seq ephemeral_of_term t | t <- ts].
+exists us; first rewrite {}/us.
++ elim/last_ind: ts e eE => /= [|ts t ih] e eE.
+  * case: e eE => //; case=> //=.
+    - by move=> ? _; rewrite c2tE => -[->].
+    - by move=> ?? _; rewrite c2tE.
+    - by move=> ? _; rewrite c2tE.
+  * rewrite !map_rcons CAppS_rcons; case: e eE => //=; case=> //=.
+    - by move=> ? _; rewrite c2tE AppS_rcons.
+    - move=> e1 e2 /andP[h1 h2]; rewrite c2tE AppS_rcons.
+      case=> he1 he2; rewrite -(ih (Ephemeral h1)) //=.
+      by rewrite -he2 /term_of_closure_r -eq_lock term_of_closureK.
+    - by move=> ? _; rewrite c2tE AppS_rcons.
++ rewrite {}/us; elim: ts {eE} => //= t ts ->.
+  by rewrite /term_of_closure_r -lock closure_of_termK.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsNf_IsNfC (e : ephemeral) : IsNf e -> IsNfC e.
+Proof.
+suff: forall t, IsNf t ->
+  forall (e : ephemeral), t = e :> term -> IsNfC e.
++ by move=> h hc; apply/(h _ hc).
+move=> {e} t; elim=> {t} /= [t _ ih|x ts _ ih] e /esym eE.
++ case/ephemeral_lamI: eE => e' -> tE.
+  by constructor; apply/ih.
++ case/ephemeral_varappI: eE => es -> tsE.
+  constructor => c /mapP[/= e'].
+  move/(map_f (term_of_closure_r \o closure_of_ephemeral)) => /=.
+  by rewrite tsE => /ih h1 ->; apply/h1.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma inj_varappsr x y ts us :
+  #x ·! ts = #y ·! us -> ts = us.
+Proof.
+elim/last_ind: ts us => [|ts t ih] /= us.
++ by elim/last_ind: us => [|us u _] //=; rewrite AppS_rcons.
+elim/last_ind: us => [|us u _] /=.
++ by rewrite AppS_rcons.
++ by rewrite !AppS_rcons => -[/ih -> ->].
+Qed.
+
+Lemma inj_cvarappsr x y cs cs' :
+  ⌊x⌋ ○! cs = ⌊y⌋ ○! cs' -> cs = cs'.
+Proof.
+elim/last_ind: cs cs' => [|cs c ih] /= cs'.
++ by elim/last_ind: cs' => [|cs' c' _] //=; rewrite CAppS_rcons.
+elim/last_ind: cs' => [|cs' c' _] /=.
++ by rewrite CAppS_rcons.
++ by rewrite !CAppS_rcons => -[/ih -> ->].
+Qed.
+
+Derive Inversion_clear red_appI
+  with (forall t u v, t · u → v)
+  Sort Prop.
+
+(* -------------------------------------------------------------------- *)
+Derive Inversion_clear rhored_app
+  with (forall c1 c2 c l, c1 ○ c2 →_[ρ,l] c)
+  Sort Prop.
+  
+Derive Inversion_clear rhored_var
+  with (forall n c l, ⌊n⌋ →_[ρ,l] c)
+  Sort Prop.
+
+Derive Inversion_clear rhored_base_var
+  with (forall n c l, ⌊n⌋ ⇀_[ρ,l] c)
+  Sort Prop.
+
+Lemma iswhnfc_appI c :
+  IsWhnfC c -> IsNeutralC c ->
+    exists n, exists cs, c = ⌊n⌋ ○! cs.
+Proof. by case=> // n cs _; eauto. Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma NoRed_varappsnf_app x ts u v :
+     (forall t, t \in ts -> IsNf t)
+  -> #x ·! ts · u → v
+  -> exists u', u → u' /\ v = #x ·! ts · u'.
+Proof.
+elim/last_ind: ts u v => //= [|ts t ih] u v.
++ move=> _ rd; inversion rd using NoRed_app_r.
+  * by inversion 1.
+  * by move=> t /(_ (IsWhnfVar _ [::])).
+  * by move=> t _ _ /inv_noredbeta_var.
+  * by move=> t _ _ {rd} rd; exists t.
+move=> nfs; rewrite AppS_rcons => rd.
+inversion rd using NoRed_app_r.
++ by inversion 1.
++ by rewrite -AppS_rcons; move=> t' /(_ (IsWhnfVar _ _)).
++ move=> t' _ _ /ih[].
+  * by move=> t'' ints; apply/nfs; rewrite mem_rcons in_cons ints orbT.
+  move=> rdt [{rd} rd] _; have nf_t: IsNf t.
+  * by apply: nfs; rewrite mem_rcons in_cons eqxx.
+  by case: (IsNf_nf nf_t rd).
++ by move=> u' _ _ {rd} rd; exists u'.
+Qed.
+
+
+(* -------------------------------------------------------------------- *)
+Lemma IsNfC_sc c l : IsNfC c -> IsNfC (sc c l).
+Proof.
+move=> h; elim: h l => {c} [c _ ih|n cs _ ih] l.
++ by rewrite scE; constructor.
++ rewrite sc_appS scE; constructor.
+  by move=> c /mapP[c' incs ->]; apply/ih.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma rhored_trans_appR (t u u' : closure) l :
+  IsNfC t -> IsNeutralC t ->
+  u →*_[ρ,l] u' -> t ○ u →*_[ρ,l] t ○ u'.
+Proof.
+move=> h1 h2; elim=> [X1 X2 h|X|X1 X2 X3 _ ih1 _ ih2].
+- by apply/rt_step/NoCν.
+- by apply/rt_refl.
+- by apply/(rt_trans _ _ _ _ _ ih1 ih2).
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma L_5_13 l (S : closure) (M M' : term) :
+     IsStc S -> wfc l S -> M → M' -> σc S l = M :> term
+  -> exists X, [/\ IsExc X, wfc l X & S →*_[ρ,l] X].
+Proof.
+elim/hind: S M M' => S ih M M'; case: (EM (IsWhnfC S)).
++ case: S ih.
+  * case=> [n|t1 t2|t].
+    - move=> ρ ih; case: (ltnP n (size ρ)) => [lt|le]; last first.
+      + rewrite /= scE ltnNge le /= => _ _ _ h ?; subst M.
+        by move: h; rewrite c2tE; case/inv_noredbeta_var.
+      + rewrite /= scE lt => _ _ hwf rd ?; subst M.
+        elim/wfc_clos: (hwf) => /mem_wf /(_ (mem_nth _ lt)) -/(_ ^0) [].
+        + case=> i iE _; move: rd; rewrite (set_nth_default ^0) //.
+          by rewrite iE scE c2tE; case/inv_noredbeta_var.
+        + case=> [t] [ρ'] [_] [ρE _ _].
+          case/(_ (ξ [ρ'] t) _ (sc (nth ⌊0⌋ ρ n) l) M'): ih => //.
+          - rewrite -ρE [X in _ < X]hE lt (set_nth_default ^0) //.
+          - by apply/(Stc3 _ _ [::]).
+          - elim/wfc_clos: hwf => /mem_wf /(_ (mem_nth _ lt)).
+            move/(_ ^0) => -[[x]|]; first by rewrite ρE.
+            case=> [t'] [ρ''] [l'] []; rewrite ρE.
+            case=> ??; subst t' ρ'' => hwf le_l.
+            by constructor; apply/(wf_strg le_l).
+          - by rewrite /= -ρE (set_nth_default ^0).
+          move=> X [exX wfX rdX]; exists X; split=> //.
+          apply/(rt_trans _ _ _ (ξ [ρ'] t)) => //.
+          by apply/rt_step/NoCBase; rewrite -ρE; constructor.
+    - move=> ρ ih h1 h2 h3 rd /esym ME.
+      case: (ih (ξ [ρ] t1 ○ ξ [ρ] t2) _ M M') => //.
+      - by rewrite hE 2![in X in _ < X]hE !ltnS.
+      - by apply/(@Stc3 _ _ [:: (ρ, t2)]).
+      - by elim/wfc_clos: h3 => h3; do 2! constructor.
+      - by rewrite ME /= [in RHS]scE.
+      move=> X [exX wfX rdX]; exists X; split=> //.
+      by apply/(rt_trans _ _ _ _ _ _ rdX)/rt_step; do 2! constructor.
+    - move=> ρ ih h1 h2 h3 rd /esym ME.
+      case: (ih (λλ [ξ [^l.+1 :: ρ] t]) _ M M') => //.
+      - rewrite hE 2![in X in _ < X]hE !ltnS.
+        rewrite leq_eqVlt -(rwP orP); left.
+        by apply/eqP/h_closure_eq => /=; rewrite !hE.
+      - by constructor; apply/(@Stc3 _ _ [::]).
+      - by do 3! constructor => //; elim/wfc_clos: h3.
+      - by rewrite ME /= [in RHS]scE.
+      move=> X [exX wfX rdX]; exists X; split=> //.
+      by apply/(rt_trans _ _ _ _ _ _ rdX)/rt_step; do 2! constructor.
+ * move=> n ih h1 h2 h3 rd /esym ME; rewrite /= scE in ME.
+   case/IsNf_nf: rd; rewrite ME; apply/IsNfC_IsNf.
+   by apply/(@IsNfCVar _ [::]).
+ * move=> n ih h1 h2 h3 rd /esym ME; rewrite /= scE in ME.
+   case/IsNf_nf: rd; rewrite ME; apply/IsNfC_IsNf.
+   by apply/(@IsNfCVar _ [::]).
+   
+ * move=> c1 c2 ih h1 h2 h3 rd /esym ME; rewrite /= scE in ME.
+   move: h1; inversion 1; move: H0.
+   elim/last_ind: cs => //= cs c' _; rewrite CAppS_rcons.
+   case=> /esym c1E /esym c2E; subst c'; case: (EM (IsNfC c1)) => h.
+   - elim/IsNfCI: h (c1E).
+     + move=> c' _; elim/last_ind: {+}cs => //=.
+       by move=> cs' c'' _; rewrite CAppS_rcons.
+     + move=> k cs' allnf; move/inj_cvarappsr => ?; subst cs'.
+       move: rd; rewrite ME c2tE c1E sc_appS scE c2t_appS c2tE.
+       case/NoRed_varappsnf_app.
+       - move=> t /mapP[ct] /mapP[c' /allnf nfc' -> ->].
+         by apply/IsNfC_IsNf/IsNfC_sc.
+     move=> M2' [rd ?]; subst M'; case: (ih c2 _ _ _ _ _ rd) => //.
+     + by rewrite [X in _ < X]hE ltnS leq_addl.
+     + move: h2; rewrite c1E; inversion 1.
+       * move: H0; elim/last_ind: ρts => // ρts ρt _.
+         rewrite map_rcons CAppS_rcons => -[_ <-].
+         by apply/(@Stc3 _ _ [::]).
+       * move: H0; elim/last_ind: ρts => // ρts ρt _.
+         rewrite map_rcons CAppS_rcons => -[_ <-].
+         by apply/(@Stc3 _ _ [::]).
+       * move: H; rewrite {}/cs0; elim/last_ind: ρts => /= [|ρts ρt _].
+         - by case=> _ <-.
+         - rewrite map_rcons CAppS_rcons => -[_ <-].
+           by apply/(@Stc3 _ _ [::]).
+     + by elim/wfc_app: h3.
+     move=> X [exX wfX rdX]; exists (c1 ○ X); split.
+     + by rewrite c1E; apply/(@Exc3 _ _ _ [::]).     
+     + by constructor=> //; elim/wfc_app: h3.
+     + rewrite c1E; apply/rhored_trans_appR => //.
+       - by constructor.
+       - by apply/IsNeutralCP; do 2! eexists.
+
+   - admit.
+
+ * admit.
+
+- admit.
+
+Admitted.
+
+(* -------------------------------------------------------------------- *)
 Lemma IsStcGrd n : ~ IsStc ⌊n⌋.
 Proof.
 suff: forall c, IsStc c -> forall n, c <> ⌊n⌋.
@@ -1427,17 +1980,6 @@ Lemma rhored_trans_lam (t t' : closure) l :
 Proof.
 elim => [X1 X2 h|X|X1 X2 X3 _ ih1 _ ih2].
 - by apply/rt_step/NoCξ.
-- by apply/rt_refl.
-- by apply/(rt_trans _ _ _ _ _ ih1 ih2).
-Qed.
-
-(* -------------------------------------------------------------------- *)
-Lemma rhored_trans_appR (t u u' : closure) l :
-  IsNfC t -> IsNeutralC t ->
-  u →*_[ρ,l] u' -> t ○ u →*_[ρ,l] t ○ u'.
-Proof.
-move=> h1 h2; elim=> [X1 X2 h|X|X1 X2 X3 _ ih1 _ ih2].
-- by apply/rt_step/NoCν.
 - by apply/rt_refl.
 - by apply/(rt_trans _ _ _ _ _ ih1 ih2).
 Qed.
@@ -1506,63 +2048,6 @@ move=> ws w _ u; rewrite AppS_rcons => -[h _] {w u}.
 by elim/last_ind: ws h => // ws w _; rewrite AppS_rcons.
 Qed.
 
-(* -------------------------------------------------------------------- *)
-Lemma IsNfC_IsNf (c : closure) : IsNfC c -> IsNf c.
-Proof.
-elim=> {c} [c _ h|c cs _ ih]; first by rewrite c2tE; constructor.
-rewrite c2t_appS c2tE; constructor.
-by move=> t /mapP[c' /ih h ->].
-Qed.
-
-(* -------------------------------------------------------------------- *)
-Lemma ephemeral_lamI (e : ephemeral) t :
-  e = λ [t] :> term -> exists2 e' : ephemeral,
-    e = λλ [e'] :> closure & e' = t :> term.
-Proof.
-case: e; case=> //=.
-- by move=> ? _; rewrite c2tE.
-- by move=> ?? _; rewrite c2tE.
-move=> c ce; rewrite c2tE => -[<-].
-by exists (Ephemeral ce).
-Qed.
-
-(* -------------------------------------------------------------------- *)
-Lemma ephemeral_varappI (e : ephemeral) x ts :
-  e = #x ·! ts :> term -> exists2 es : seq ephemeral,
-      e = ⌊x⌋ ○! [seq closure_of_ephemeral c | c <- es] :> closure
-    & [seq term_of_closure_r (closure_of_ephemeral c) | c <- es] = ts.
-Proof.
-move=> eE; pose us := [seq ephemeral_of_term t | t <- ts].
-exists us; first rewrite {}/us.
-+ elim/last_ind: ts e eE => /= [|ts t ih] e eE.
-  * case: e eE => //; case=> //=.
-    - by move=> ? _; rewrite c2tE => -[->].
-    - by move=> ?? _; rewrite c2tE.
-    - by move=> ? _; rewrite c2tE.
-  * rewrite !map_rcons CAppS_rcons; case: e eE => //=; case=> //=.
-    - by move=> ? _; rewrite c2tE AppS_rcons.
-    - move=> e1 e2 /andP[h1 h2]; rewrite c2tE AppS_rcons.
-      case=> he1 he2; rewrite -(ih (Ephemeral h1)) //=.
-      by rewrite -he2 /term_of_closure_r -eq_lock term_of_closureK.
-    - by move=> ? _; rewrite c2tE AppS_rcons.
-+ rewrite {}/us; elim: ts {eE} => //= t ts ->.
-  by rewrite /term_of_closure_r -lock closure_of_termK.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-Lemma IsNf_IsNfC (e : ephemeral) : IsNf e -> IsNfC e.
-Proof.
-suff: forall t, IsNf t ->
-  forall (e : ephemeral), t = e :> term -> IsNfC e.
-+ by move=> h hc; apply/(h _ hc).
-move=> {e} t; elim=> {t} /= [t _ ih|x ts _ ih] e /esym eE.
-+ case/ephemeral_lamI: eE => e' -> tE.
-  by constructor; apply/ih.
-+ case/ephemeral_varappI: eE => es -> tsE.
-  constructor => c /mapP[/= e'].
-  move/(map_f (term_of_closure_r \o closure_of_ephemeral)) => /=.
-  by rewrite tsE => /ih h1 ->; apply/h1.
-Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma IsNeutral_IsNeutralC (e : ephemeral) : IsNeutral e -> IsNeutralC e.
@@ -1582,50 +2067,6 @@ move=> w; case => //= x ts _ _ _ _.
 elim/last_ind: ts => // ts t' _; rewrite AppS_rcons.
 by rewrite -AppS_rcons; apply/IsNeutralVar.
 Qed.
-
-(* -------------------------------------------------------------------- *)
-Lemma IsNfC_IsEph c : IsNfC c -> is_ephemeral c.
-Proof.
-elim=> // n; elim/last_ind=> // cs c' ih h1 h2.
-rewrite CAppS_rcons /=; rewrite ih ?h2 //.
-* by rewrite mem_rcons mem_head.
-* by move=> c'' c''in; apply/h1; rewrite mem_rcons mem_behead.
-* by move=> c'' c''in; apply/h2; rewrite mem_rcons mem_behead.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-Lemma h_closure_eq ρ1 ρ2 t :
-  [seq h x | x <- ρ1] = [seq h x | x <- ρ2]
-  -> h (ξ [ρ1] t) = h (ξ [ρ2] t).
-Proof.
-elim: t ρ1 ρ2 => [n|t1 ih1 t2 ih2|t iht] ρ1 ρ2 eq /=.
-+ have eqsz: size ρ1 = size ρ2.
-  - by move/(congr1 size): eq; rewrite !size_map => ->.
-  rewrite ![h (ξ [_] #_)]hE; rewrite eqsz; case: ifPn => //.
-  move=> ltn2; have ltn1: n < size ρ1 by rewrite eqsz.
-  by move/(congr1 ((nth 0)^~ n)): eq; rewrite !(nth_map ⌊0⌋) // => ->.
-+ by rewrite 2!hE (ih1 _ _ eq) (ih2 _ _ eq) // !hE.
-+ rewrite [LHS]hE [RHS]hE ![h (λλ [_])]hE; congr _.+2.
-  by apply/iht => /=; rewrite !hE eq.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-Derive Inversion_clear rhored_app
-  with (forall c1 c2 c l, c1 ○ c2 →_[ρ,l] c)
-  Sort Prop.
-  
-Derive Inversion_clear rhored_var
-  with (forall n c l, ⌊n⌋ →_[ρ,l] c)
-  Sort Prop.
-
-Derive Inversion_clear rhored_base_var
-  with (forall n c l, ⌊n⌋ ⇀_[ρ,l] c)
-  Sort Prop.
-
-Lemma iswhnfc_appI c :
-  IsWhnfC c -> IsNeutralC c ->
-    exists n, exists cs, c = ⌊n⌋ ○! cs.
-Proof. by case=> // n cs _; eauto. Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma isneutralc_rhored c1 c2 l :
@@ -1689,29 +2130,6 @@ Is+ by move=> ???? ? _ /IsWhnfC_appI.
   by rewrite -CAppS_rcons; constructor.
 Qed.
  *)
-
-(* -------------------------------------------------------------------- *)
-Lemma IsWhnfCN_rhored c c1 c2 l :
-  ~ IsWhnfC c -> c = c1 ○ c2 -> exists c', c →_[ρ,l] c'.
-Proof.
-elim/clind: c l => //.
-+ move=> c'1 c'2 ih1 ih2 l h [??]; subst c'1 c'2.
-
-  
-+ move=> t ρ ih l _; case: t => [n|t u|t].
-  * case: (ltnP n (size ρ)) => [lt|ge].
-    - by exists (nth ^0 ρ n); do 2! constructor.
-    - by exists ⌊n + l - size ρ⌋; do 2! constructor.
-  * exists (ξ [ρ] t  ○ ξ [ρ] u); do 2! constructor.
-  * by exists (λλ [ξ [^l.+1 :: ρ] t]); do 2! constructor.
-+ by move=> n l _; exists ⌊l - n⌋; do 2! constructor.
-+ move=> n l []; apply/(@IsWhnfCVar _ [::]).
-+ admit.
-+ move=> c ih l h; case: (EM (IsWhnfC c)); last first.
-  - by move/(ih l.+1) => [c' rd]; exists (λλ [c']); apply/NoCξ.
-  move=> h'; case: h' h.
-  - move=> t ρ _.
-Admitted.
 
 (* -------------------------------------------------------------------- *)
 Lemma sc_rho_inv c l t : IsNf t -> sc c l = t :> term ->
@@ -1947,31 +2365,6 @@ move=> {h} _ n' cs' _; elim/last_ind: cs' cs => /= [|c' cs' ih] cs.
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Derive Inversion_clear NoRed_app_r
-  with (forall t u v, t · u → v)
-  Sort Prop.
-
-Derive Inversion inv_beta
-  with (forall t u v, t · u ⇀_β v)
-  Sort Prop.
-
-Lemma IsNf_nf t : IsNf t -> forall u, ~ t → u.
-Proof.
-elim=> {t} [t _ ih|n ts _ ih].
-+ by move=> u /inv_noredbeta_lam[t' [/ih]].
-+ move=> u rd; elim/last_ind: ts u ih rd => /= [|ts t ihts] u ih.
-  - by move=> /inv_noredbeta_var.
-  rewrite AppS_rcons; inversion 1 using NoRed_app_r.
-  - move=> {rd} rd; inversion rd using inv_beta.
-    move=> {rd} _ t' u'; elim/last_ind: ts {ihts ih} => //.
-    by move=> s x _; rewrite AppS_rcons.
-  - by move=> t' /(_ (IsWhnfVar _ _)).
-  - move=> t' _ _ /ihts; apply => v ints; apply/ih.
-    by rewrite mem_rcons in_cons ints orbT.
-  - by move=> v _ _; apply/ih; rewrite mem_rcons in_cons eqxx.
-Qed.
-
-(* -------------------------------------------------------------------- *)
 Lemma NoRed_varappsnf_app x ts u v :
      (forall t, t \in ts -> IsNf t)
   -> #x ·! ts · u → v
@@ -2003,15 +2396,6 @@ Proof. elim=> {c}.
 + move=> n nfc c ρts csE _ hc _ _; rewrite -CAppS_cons -CAppS_cat.
   move=> hF; have /(_ n _ hF) := hc (isnfc_varapps _ _).
   by apply; rewrite mem_cat in_cons eqxx /= orbT.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-Lemma IsNfC_sc c l : IsNfC c -> IsNfC (sc c l).
-Proof.
-move=> h; elim: h l => {c} [c _ ih|n cs _ ih] l.
-+ by rewrite scE; constructor.
-+ rewrite sc_appS scE; constructor.
-  by move=> c /mapP[c' incs ->]; apply/ih.
 Qed.
 
 (* -------------------------------------------------------------------- *)
