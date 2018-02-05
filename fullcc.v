@@ -1826,12 +1826,11 @@ Proof. elim: S l t.
 Admitted.
 
 (* -------------------------------------------------------------------- *)
-Theorem commute l (M0 M1 : closure) (X : closure) (E : ephemeral) :
-    wfc l M0 -> IsExc X
-  -> M0 →*_[ρ, l] X
-  -> X →_[β, l] M1
-  -> X →_[σ, l]  E
-  -> exists E', M1 →_[σ, l] E' /\ E → E'.
+Theorem commute l (S0 : closure) (m0 : term) :
+  IsStc S0 -> wfc l S -> σc S0 l = m0 :> term ->
+  ((IsNF t /\ (exists N, (S0 →*_[ρ,l] N & N = t :> term)))
+   ‌\/ (exists X, (IsExp X & S0 →*_[ρ,l] X & X →_[β,l] S1 &
+                               IsStc S1 & m0 → m1 & σc S1 l = m1 :> term))).
 Proof.
 by move=> wfX exc r1 r2 rs; apply/(commute_r (wfc_rho wfX r1) exc r2 rs).
 Qed.
