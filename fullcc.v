@@ -1707,12 +1707,134 @@ by move=> t /mapP[c' /ih h ->].
 Qed.
 
 (* -------------------------------------------------------------------- *)
-Lemma L_5_12 l (S S' : closure) (t : term) :
+Lemma L_5_12 l (S : closure) (t : term) :
      IsStc S -> IsWhnfC S -> ~ IsNfC S -> IsNf t
-  -> wfc l S -> σc S l = t :> term -> S →_[ρ,l] S' -> IsStc S'
-  ->    (~ IsNfC S' -> IsWhnfC S')
-     /\ (IsNfC S' -> S' = t :> term).
-Proof. Admitted.
+  -> wfc l S -> σc S l = t :> term ->
+     exists S', [/\ S →_[ρ,l] S', IsStc S' &
+        (~ IsNfC S' /\ IsWhnfC S')
+     \/ (IsNfC S' /\ S' = t :> term)].
+Proof. elim: S l t.
++ admit.                        (* not in WHNF *)
++ admit.                        (* in NF *)
++ admit.                        (* not in WHNF *)
++ move=> c1 ih1 c2 ih2 l t h1 h2 h3 h4 h5 /esym tE; case: (EM (IsNfC c1)) => nfc1.
+  move: tE => /=; rewrite scE c2tE; case: t h4 => // t1 t2 h4 tE.
+  - have: exists n cs, c1 = ⌊n⌋ ○! cs by admit.
+    case=> [n] [cs] c1E; subst c1; case: (EM (IsWhnfC c2)) => whnfc2.
+    * (* because: c1 is Whnf & c1 is Nf *)
+      have nfc2: ~ IsNfC c2 by admit. case: (ih2 l t2) => // {ih1 ih2}.
+      - admit. (* because of h1 *)
+      - admit. (* because of h4 *)
+      - admit. (* because of h5 *)
+      - by case: tE => _ ->.
+      move=> S'' [hS''1 hS''2 hS''3]; case: hS''3.
+      - case=> hS''3 hS''4; exists (⌊n⌋ ○! cs ○ S''); split=> //.
+        + by apply/NoCν => //=; apply/IsNeutralCP; do! eexists.
+        + apply/(@Stc5 _ _ _ [::]) => // nf nfcs.
+          admit. (* Because of nfc1 *)
+        left; split.
+        + admit. (* by nfc1 & hS''3 *)
+        + by rewrite -CAppS_rcons; constructor.
+      - case=> hS''3 ?; subst t2; exists (⌊n⌋ ○! cs ○ S''); split => //.
+        + by apply/NoCν => //; apply/IsNeutralCP; do! eexists.
+        + apply/(@Stc5 _ _ _ [::]) => // nf nfcs.
+          admit. (* Because of nfc1 *)
+        right; split.
+        + admit. (* by nfc1 & hS''3 *)
+        + case: tE => -> _; rewrite c2tE; congr (_ · _).
+          admit. (* because of nfc1, sc vanishes *)
+  - (* from nfc1, h3, and the fact that the operator is neutral *)
+    have: exists c2', c2 →_[ρ,l] c2' by admit.
+    case=> c2' rd; case: (@L_5_11 l c2 c2' t2) => // {ih1 ih2}.
+    * admit. (* from h1 *)
+    * admit. (* from h4, t2 is NF, so WHNF *)
+    * admit. (* from h5 *)
+    * by case: tE => _ ->.
+    move=> h6 h7; exists (⌊n⌋ ○! cs ○ c2'); split=> //.
+    * by apply/NoCν => //; apply/IsNeutralCP; do! eexists.
+    * apply/(@Stc5 _ _ _ [::]) => //. admit. (* by nfc1 *)
+    case: (EM (IsNfC c2')) => h8.
+    * right; split.
+      - admit. (* neutral + nf *)
+      - rewrite c2tE h7 //; case: tE => -> _.
+        admit. (* scvanishes because of nfc1 *)
+    * left; split.
+      - admit. (* because of h8 *)
+      - by rewrite -CAppS_rcons; constructor.
+
+  - have: exists c1', c1 →_[ρ,l] c1' by admit. (* because of nfc1 *)
+    case=> c1' rd; move: tE; rewrite /= scE c2tE; case: t h4 => //.
+    move=> t1 t2 h4 [t1E t2E]; case: (ih1 l t1) => {ih1 ih2} //.
+    * admit. (* by h1 *)
+    * admit. (* by h2 *)
+    * admit. (* by h4 *)
+    * admit. (* by h5 *)
+    move=> S'' [hS''1 hS''2 hS''3]; exists (S'' ○ c2); split.
+    * apply/NoCμ2 => //.
+      - admit. (* by h2 *)
+      - admit. (* by h2 *)
+    * have: exists ρ b, c2 = ξ [ρ] b.
+      - (* by inversion of h1, in Stc5,
+           c2 cannot be "c", otherwise c1 would by NF *)
+        admit.
+      case=> [ρ] [b] ?; subst c2.
+      have h6: IsNeutralC S''.
+      - (* by inversion of h2 *) admit.
+      admit. (* by inversion of hS1'', retrieving the form of S''*)
+    * left; split.
+      - admit. (* c2 is a proper closure *)
+      - admit. (* by inversion of hS''1, retriving the for of S'' *)
++ move=> c ih l t h1 h2 h3 h4 h5 /esym tE.
+  have h6: ~ IsNfC c by admit. (* by h3 *)
+  have: exists c', c →_[ρ,l.+1] c' by admit. (* by h6 *)
+  case=> c' rd; case: (EM (IsWhnfC c)).
+  * move=> h7; move: tE; rewrite /= scE c2tE.
+    case: t h4 => // t h8 [?]; subst t.
+    case: (ih l.+1 (sc c l.+1)) => //.
+    - admit. (* by h1 *)
+    - admit. (* by h8 *)
+    - admit. (* by h5 *)
+    - move=> S'' [hS''1 hS''2 hS''3]; case: hS''3.
+      + case=> h9 h10; exists (λλ [S'']); split => //.
+        - by apply/NoCξ.
+        - by constructor.
+        left; split.
+        - admit. (* by h9 *)
+        - by constructor.
+      + case=> h9 h10; exists (λλ [S'']); split => //.
+        - by apply/NoCξ.
+        - by constructor.
+        right; split.
+        - by constructor.
+        - by rewrite -h10 c2tE.
+  * move: tE; rewrite /= scE c2tE.
+    case: t h4 => // t h8 [?]; subst t.
+    move=> h7; case: (@L_5_11 l.+1 c c' (sc c l.+1)) => //.
+    - admit. (* by h1 *)
+    - admit. (* by h8 *)
+    - admit. (* by h5 *)
+    move=> h9 h10; exists (λλ [c']); split=> //.
+    - by apply/NoCξ.
+    - by constructor.
+    case: (EM (IsNfC (c'))).
+    + move=> h11; right; split=> //.
+      - by constructor.
+      - by rewrite -h10 // c2tE.
+    + move=> h11; left; split=> //.
+      - admit. (* by h11 *)
+      - by constructor.
+Admitted.
+
+(* -------------------------------------------------------------------- *)
+Theorem commute l (M0 M1 : closure) (X : closure) (E : ephemeral) :
+    wfc l M0 -> IsExc X
+  -> M0 →*_[ρ, l] X
+  -> X →_[β, l] M1
+  -> X →_[σ, l]  E
+  -> exists E', M1 →_[σ, l] E' /\ E → E'.
+Proof.
+by move=> wfX exc r1 r2 rs; apply/(commute_r (wfc_rho wfX r1) exc r2 rs).
+Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma ephemeral_lamI (e : ephemeral) t :
@@ -1853,11 +1975,87 @@ move=> h1 h2; elim=> [X1 X2 h|X|X1 X2 X3 _ ih1 _ ih2].
 Qed.
 
 (* -------------------------------------------------------------------- *)
+Lemma NIsNfC_red c l :
+ ~ IsNfC c -> exists c', c →_[ρ,l] c'.
+Proof. Admitted.
+
+(* -------------------------------------------------------------------- *)
 Lemma L_5_13 l (S : closure) (M M' : term) :
      IsStc S -> wfc l S -> M → M' -> σc S l = M :> term
   -> exists X, [/\ IsExc X, wfc l X & S →*_[ρ,l] X].
 Proof.
 elim/hind: S M M' => S ih M M'; case: (EM (IsWhnfC S)).
++ case: S ih.
+ * admit. (* a proper closure is not a whnf *)
+ * move=> n ih h1 h2 h3 rd /esym ME; rewrite /= scE in ME.
+   case/IsNf_nf: rd; rewrite ME; apply/IsNfC_IsNf.
+   by apply/(@IsNfCVar _ [::]).
+ * move=> n ih h1 h2 h3 rd /esym ME; rewrite /= scE in ME.
+   case/IsNf_nf: rd; rewrite ME; apply/IsNfC_IsNf.
+   by apply/(@IsNfCVar _ [::]).
+   
+ * move=> c1 c2 ih h1 h2 h3 rd /esym ME; rewrite /= scE in ME.
+   move: h1; inversion 1; move: H0.
+   elim/last_ind: cs => //= cs c' _; rewrite CAppS_rcons.
+   case=> /esym c1E /esym c2E; subst c'; case: (EM (IsNfC c1)) => h.
+   - elim/IsNfCI: h (c1E).
+     + move=> c' _; elim/last_ind: {+}cs => //=.
+       by move=> cs' c'' _; rewrite CAppS_rcons.
+     + move=> k cs' allnf; move/inj_cvarappsr => ?; subst cs'.
+       move: rd; rewrite ME c2tE c1E sc_appS scE c2t_appS c2tE.
+       case/NoRed_varappsnf_app.
+       - move=> t /mapP[ct] /mapP[c' /allnf nfc' -> ->].
+         by apply/IsNfC_IsNf/IsNfC_sc.
+     move=> M2' [rd ?]; subst M'; case: (ih c2 _ _ _ _ _ rd) => //.
+     + by rewrite [X in _ < X]hE ltnS leq_addl.
+     + move: h2; rewrite c1E; inversion 1.
+       * move: H0; elim/last_ind: ρts => // ρts ρt _.
+         rewrite map_rcons CAppS_rcons => -[_ <-].
+         by apply/(@Stc3 _ _ [::]).
+       * move: H0; elim/last_ind: ρts => // ρts ρt _.
+         rewrite map_rcons CAppS_rcons => -[_ <-].
+         by apply/(@Stc3 _ _ [::]).
+       * move: H; rewrite {}/cs0; elim/last_ind: ρts => /= [|ρts ρt _].
+         - by case=> _ <-.
+         - rewrite map_rcons CAppS_rcons => -[_ <-].
+           by apply/(@Stc3 _ _ [::]).
+     + by elim/wfc_app: h3.
+     move=> X [exX wfX rdX]; exists (c1 ○ X); split.
+     + by rewrite c1E; apply/(@Exc3 _ _ _ [::]).     
+     + by constructor=> //; elim/wfc_app: h3.
+     + rewrite c1E; apply/rhored_trans_appR => //.
+       - by constructor.
+       - by apply/IsNeutralCP; do 2! eexists.
+   - case: (EM (IsNf (sc c1 l))) => h'.
+     + case: (@L_5_12 l c1 (sc c1 l)) => //.
+       * admit. (* -> h2 *)
+       * admit. (* -> h1 *)
+       * admit. (* -> h3 *)
+       move=> X [hX1 hX2 hX3]; case: (ih (X ○ c2) _ M M') => //.
+       * admit.
+       * admit. (* -> if c2 is the 'c' of Stc5, then c1 is normal -> contradiction *)
+       * admit. (* red preserves wf, so X is wf, and ok *)
+       * admit. (* From ME and hX1 *)
+       move=> X' [hX'1 hX'2 hX'3]; exists X'; split=> //.
+       rewrite -c1E; apply/(rt_trans _ _ _ _ _ _ hX'3).
+       apply/rt_step/NoCμ2 => //.
+       * admit. (* -> h1 *)
+       * admit. (* By computation *)
+     + move: rd; rewrite ME; rewrite !c2tE.
+       have: exists M1' M2, M' = M1' · M2 /\ sc c1 l → M1'.
+       * admit.
+       case=> [M1'] [M2] [M'E rd1 rd2]; case: (ih c1 _ (sc c1 l) M1') => //.
+       * admit.
+       * admit. (* -> if c2 is the 'c' of Stc5, then c1 is normal -> contradiction *)
+       * admit. (* From h3 *)
+       move=> X [hX1 hX2 hX3]; exists (X ○ c2); split=> //.
+       * admit. (* c2 is a proper closure because the 'c of Stc5 cannot be c3 *)
+       * admit.
+       * admit. (* by hX3, using Rhoμ2 several times *)
+ * move=> c ih h1 h2 h3 rd /esym /= ME.
+   (* By IH on the body, inverting first the reduction to get M *)
+   admit.
+
 + case: S ih.
   * case=> [n|t1 t2|t].
     - move=> ρ ih; case: (ltnP n (size ρ)) => [lt|le]; last first.
@@ -1898,52 +2096,22 @@ elim/hind: S M M' => S ih M M'; case: (EM (IsWhnfC S)).
       - by rewrite ME /= [in RHS]scE.
       move=> X [exX wfX rdX]; exists X; split=> //.
       by apply/(rt_trans _ _ _ _ _ _ rdX)/rt_step; do 2! constructor.
- * move=> n ih h1 h2 h3 rd /esym ME; rewrite /= scE in ME.
-   case/IsNf_nf: rd; rewrite ME; apply/IsNfC_IsNf.
-   by apply/(@IsNfCVar _ [::]).
- * move=> n ih h1 h2 h3 rd /esym ME; rewrite /= scE in ME.
-   case/IsNf_nf: rd; rewrite ME; apply/IsNfC_IsNf.
-   by apply/(@IsNfCVar _ [::]).
-   
- * move=> c1 c2 ih h1 h2 h3 rd /esym ME; rewrite /= scE in ME.
-   move: h1; inversion 1; move: H0.
-   elim/last_ind: cs => //= cs c' _; rewrite CAppS_rcons.
-   case=> /esym c1E /esym c2E; subst c'; case: (EM (IsNfC c1)) => h.
-   - elim/IsNfCI: h (c1E).
-     + move=> c' _; elim/last_ind: {+}cs => //=.
-       by move=> cs' c'' _; rewrite CAppS_rcons.
-     + move=> k cs' allnf; move/inj_cvarappsr => ?; subst cs'.
-       move: rd; rewrite ME c2tE c1E sc_appS scE c2t_appS c2tE.
-       case/NoRed_varappsnf_app.
-       - move=> t /mapP[ct] /mapP[c' /allnf nfc' -> ->].
-         by apply/IsNfC_IsNf/IsNfC_sc.
-     move=> M2' [rd ?]; subst M'; case: (ih c2 _ _ _ _ _ rd) => //.
-     + by rewrite [X in _ < X]hE ltnS leq_addl.
-     + move: h2; rewrite c1E; inversion 1.
-       * move: H0; elim/last_ind: ρts => // ρts ρt _.
-         rewrite map_rcons CAppS_rcons => -[_ <-].
-         by apply/(@Stc3 _ _ [::]).
-       * move: H0; elim/last_ind: ρts => // ρts ρt _.
-         rewrite map_rcons CAppS_rcons => -[_ <-].
-         by apply/(@Stc3 _ _ [::]).
-       * move: H; rewrite {}/cs0; elim/last_ind: ρts => /= [|ρts ρt _].
-         - by case=> _ <-.
-         - rewrite map_rcons CAppS_rcons => -[_ <-].
-           by apply/(@Stc3 _ _ [::]).
-     + by elim/wfc_app: h3.
-     move=> X [exX wfX rdX]; exists (c1 ○ X); split.
-     + by rewrite c1E; apply/(@Exc3 _ _ _ [::]).     
-     + by constructor=> //; elim/wfc_app: h3.
-     + rewrite c1E; apply/rhored_trans_appR => //.
-       - by constructor.
-       - by apply/IsNeutralCP; do 2! eexists.
-
-   - admit.
-
- * admit.
-
-- admit.
-
+  * admit. (* A variable is a whnf *)
+  * admit. (* Resolve the index and apply the IH *)
+  * case => //.
+    - case=> [n|t1 t2|t].
+      + admit. (* Apply ih on the reduce of #x *)
+      + admit. (* ibid *)
+      + move=> cs c ih h1 h2 h3 rd /esym /= ME.
+        exists (λλ [ξ [^l.+1 :: cs] t] ○ c); split=> //.
+        * admit. (* By h2, c is a proper closure *)
+        * admit. (* ok, from h3 *)
+        * admit. (* By rule μ1 *)
+    - admit. (* Is it a whnf *)
+    - admit. (* Reduce ^n, apply ih *)
+    - admit. (* ibid *)
+    - admit. (* We're contradicting IsStc (...) *)
+  * admit. (* iit is a whnf *)
 Admitted.
 
 (* -------------------------------------------------------------------- *)
