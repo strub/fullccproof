@@ -1826,14 +1826,33 @@ Proof. elim: S l t.
 Admitted.
 
 (* -------------------------------------------------------------------- *)
-Theorem commute l (S0 : closure) (m0 : term) :
-  IsStc S0 -> wfc l S -> σc S0 l = m0 :> term ->
-  ((IsNF t /\ (exists N, (S0 →*_[ρ,l] N & N = t :> term)))
-   ‌\/ (exists X, (IsExp X & S0 →*_[ρ,l] X & X →_[β,l] S1 &
-                               IsStc S1 & m0 → m1 & σc S1 l = m1 :> term))).
+Lemma sc_rho_inv c l t : IsNf t -> IsStc c -> wfc l c -> sc c l = t :> term ->
+  exists2 e : ephemeral, c →*_[ρ,l] e & t = e.
 Proof.
-by move=> wfX exc r1 r2 rs; apply/(commute_r (wfc_rho wfX r1) exc r2 rs).
-Qed.
+elim/hind: c l t => c ih l t; case: (EM (IsWhnfC c)).
++ case: (EM (IsNfC c)).
+  - admit. (* e = c *)
+  - move=> h1 h2 h3 h4 h5 h6; case: (@L_5_12 l c t) => //.
+    move=> c' [h7 h8 h9]; case: h9.
+    + case=> h9 h10; case: (ih c' _ l t) => //.
+      * admit. (* FIXME: to be proved *)
+      * admit. (* FIXME: proved somewhere *)
+      * admit. (* easy *)
+      move=> e h11 h12; exists e => //.
+      * by apply/(rt_trans _ _ _ _ _ _ h11)/rt_step.
+    + case=> h9 h10. admit. (* e = c' *)
++ move=> h1 h2 h3 h4 h5; have: exists c', c →_[ρ,l] c' by admit. (* h1 *)
+  case=> c' rd; case: (@L_5_11 l c c' t) => //.
+  + admit. (* h12 *)
+  + move=> h6 h7; case: (EM (IsNfC c')).
+    - admit. (* e = c' *)
+    - move=> h8; case: (ih c' _ l t) => //.
+      * admit. (* FIXME: to be proved *)
+      * admit. (* FIXME: proved somewhere *)
+      * admit. (* easy from h5 *)
+    move=> e h9 h10; exists e => //.
+    by apply/(rt_trans _ _ _ _ _ _ h9)/rt_step.
+Admitted.
 
 (* -------------------------------------------------------------------- *)
 Lemma ephemeral_lamI (e : ephemeral) t :
@@ -2112,6 +2131,25 @@ elim/hind: S M M' => S ih M M'; case: (EM (IsWhnfC S)).
     - admit. (* We're contradicting IsStc (...) *)
   * admit. (* iit is a whnf *)
 Admitted.
+
+(* -------------------------------------------------------------------- *)
+Theorem commute l (S0 : closure) (m0 : term) :
+  IsStc S0 -> wfc l S0 -> σc S0 l = m0 :> term ->
+  (IsNf m0 -> exists2 N, S0 →*_[ρ,l] N & N = m0 :> term)
+  /\ (~IsNf m0 -> exists S1 (m1 : term) X,
+           IsExc X
+        /\ S0 →*_[ρ,l] X
+        /\ X →_[β,l] S1
+        /\ IsStc S1
+        /\ m0 → m1
+        /\ σc S1 l = m1 :> term).
+Proof.
+move=> h1 h2 h3; split => h4.
++ by case: (@sc_rho_inv S0 l m0) => // e rd m0E; subst; exists e.
++ have: exists m0', m0 → m0' by admit. (* h4 *)
+  case=> m0' rd; case: (@L_5_13 l S0 m0 m0') => //.
+  move=> S [h5 h6 h7].
+Qed.
 
 (* -------------------------------------------------------------------- *)
 Lemma IsStcGrd n : ~ IsStc ⌊n⌋.
