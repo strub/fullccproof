@@ -989,19 +989,19 @@ Inductive IsStc : closure -> Prop :=
     -> IsStc (⌊n⌋ ○! nfc ○ c ○! cs).
 
 (* -------------------------------------------------------------------- *)
-Inductive IsExc : closure -> Prop :=
+Inductive IsExc : nat -> closure -> Prop :=
 | Exc1 n ρ t1 ρts :
     let cs := [seq ξ [ρt.1] ρt.2 | ρt <- ρts] in
-    size ρts != 0 -> IsExc ((λλ [ξ [^n :: ρ] t1]) ○! cs)
+    size ρts != 0 -> IsExc n ((λλ [ξ [^n.+1 :: ρ] t1]) ○! cs)
 
-| Exc2 c :
-    IsExc c -> IsExc (λλ [c])
+| Exc2 n c :
+    IsExc n.+1 c -> IsExc n (λλ [c])
 
-| Exc3 n nfc c ρts :
+| Exc3 n p nfc c ρts :
     let cs := [seq ξ [ρt.1] ρt.2 | ρt <- ρts] in
-       IsExc c
+       IsExc p c
     -> (forall nf, nf \in nfc -> IsNfC nf)
-    -> IsExc (⌊n⌋ ○! nfc ○ c ○! cs).
+    -> IsExc p (⌊n⌋ ○! nfc ○ c ○! cs).
 
 (* -------------------------------------------------------------------- *)
 Reserved Notation "t1 ⇀ t2"   (at level 60, no associativity, format "t1  ⇀  t2").
@@ -1186,9 +1186,9 @@ Notation "c1 →*_[ 'ρ' , l ] c2" := (clos_refl_trans _ (RhoRed l) c1 c2).
 
 (* -------------------------------------------------------------------- *)
 Inductive TBetaRed1 : nat -> closure -> closure -> Prop :=
-| TBeta: forall l t u ρ,
-    (λλ [ξ[^l.+1 :: ρ] t]) ○ (ξ [ρ] u)
-      ⇀_[β, l] (ξ [ξ [ρ] u :: ρ] t)
+| TBeta: forall l t u ρ1 ρ2,
+    (λλ [ξ[^l.+1 :: ρ1] t]) ○ (ξ [ρ2] u)
+      ⇀_[β, l] (ξ [ξ [ρ2] u :: ρ1] t)
 
 where "c1 ⇀_[ 'β' , l ] c2" := (TBetaRed1 l c1 c2).
 
@@ -1328,7 +1328,7 @@ Proof.
 elim/last_ind: nfc M => /= [|nfc nf ih] M h.
   by rev/rwb_grd; rev/rwb1_grd.
 rewrite CAppS_rcons; rev/rwb_app; first rev/rwb1_app.
-+ move=> _ _ t u ρ _ eq; absurd False => //; move: eq.
++ move=> _ _ t u ρ1 ρ2 _ eq; absurd False => //; move: eq.
   by elim/last_ind: nfc {ih h} => //= zs z _; rewrite CAppS_rcons.
 + by move=> c1' h'; absurd False => //; apply/h'; ctor.
 + move=> c1' _ _; apply/ih => nf' mem; apply/h.
@@ -1340,7 +1340,7 @@ rewrite CAppS_rcons; rev/rwb_app; first rev/rwb1_app.
   elim/last_ind: cs ihcs c2' => /= [|cs c ihcs] ih c2'.
     by rev/rwb_grd; rev/rwb1_grd.
   rewrite CAppS_rcons; rev/rwb_app; first rev/rwb1_app.
-  + move=> _ _ t u ρ _; elim/last_ind: cs {ihcs ih} => //.
+  + move=> _ _ t u ρ1 ρ2 _; elim/last_ind: cs {ihcs ih} => //.
     by move=> zs z _; rewrite CAppS_rcons.
   + by move=> c1' h' _; apply/h'; ctor.
   + move=> c1' _ _; apply/ihcs => c' c'_in_cs c3 l'.
@@ -1355,7 +1355,7 @@ Lemma inv_redX3_r l n (nfc : seq closure) c M :
   -> exists2 M', M = ⌊n⌋ ○! nfc ○ M' & c →_[β,l] M'.
 Proof.
 move=> h; rev/rwb_app; first rev/rwb1_app.
-+ move=> _ _ t u ρ _ eq; absurd False => //; move: eq.
++ move=> _ _ t u ρ1 ρ2 _ eq; absurd False => //; move: eq.
   by elim/last_ind: nfc {h} => // zs z; rewrite CAppS_rcons.
 + by move=> c1' h'; absurd False => //; apply/h'; ctor.
 + by move=> c1'_ _ _ /inv_redX3_rhd -/(_ h).
@@ -1372,7 +1372,7 @@ Proof.
 move=> cs h; rewrite {}/cs; elim/last_ind: ρts M => [|ts t ih] M.
   by move/inv_redX3_r => /(_ h).
 rewrite map_rcons CAppS_rcons; rev/rwb_app.
-+ rev/rwb1_app=> _ _ t' u' ρ' _ eq; absurd False => //.
++ rev/rwb1_app=> _ _ t' u' ρ1' ρ2' _ eq; absurd False => //.
   move: eq; rewrite -CAppS_rcons -CAppS_cat; move: (_ ++ _).
   by elim/last_ind=> //= z zs _; rewrite CAppS_rcons.
 + move=> c1'; rewrite -CAppS_rcons -CAppS_cat; move: (_ ++ _) => cs.
@@ -2000,7 +2000,7 @@ Proof. Admitted.
 (* -------------------------------------------------------------------- *)
 Lemma L_5_13 l (S : closure) (M M' : term) :
      IsStc S -> wfc l S -> M → M' -> σc S l = M :> term
-  -> exists X, [/\ IsExc X, wfc l X & S →*_[ρ,l] X].
+  -> exists X, [/\ IsExc l X, wfc l X & S →*_[ρ,l] X].
 Proof.
 elim/hind: S M M' => S ih M M'; case: (EM (IsWhnfC S)).
 + case: S ih.
@@ -2039,7 +2039,7 @@ elim/hind: S M M' => S ih M M'; case: (EM (IsWhnfC S)).
            by apply/(@Stc3 _ _ [::]).
      + by elim/wfc_app: h3.
      move=> X [exX wfX rdX]; exists (c1 ○ X); split.
-     + by rewrite c1E; apply/(@Exc3 _ _ _ [::]).     
+     + by rewrite c1E; apply/(@Exc3 _ l _ _ [::]).     
      + by constructor=> //; elim/wfc_app: h3.
      + rewrite c1E; apply/rhored_trans_appR => //.
        - by constructor.
@@ -2132,6 +2132,24 @@ elim/hind: S M M' => S ih M M'; case: (EM (IsWhnfC S)).
   * admit. (* iit is a whnf *)
 Admitted.
 
+Lemma IsExcBeta X l : IsExc l X -> wfc l X -> exists2 S, IsStc S & X →_[β,l] S.
+Proof. elim.
++ move=> n ρ t1 [|] // ρt ρts cs _ h.
+  rewrite /cs map_cons CAppS_cons; set cs' := map _ _.
+  exists ((ξ [(ξ [ρt.1] ρt.2 :: ρ)] t1) ○! cs').
+  * by apply/Stc3.
+  elim/last_ind: cs' => [|cs' c ih] /=; first by do! constructor.
+  rewrite !CAppS_rcons; apply/NoCμ1 => //. admit.
++ move=> n c _ ih; elim/wfc_lam => /ih [S h1 h2].
+  exists (λλ [S]); first by do! constructor.
+  by apply/NoCξ.
++ move=> n p nfc c ρts cs h1 h2 h3 h4.
+  move/wfc_appsl: h4; elim/wfc_app => _ /h2 [S h'1 h'2].
+  exists (⌊n⌋ ○! nfc ○ S ○! cs); first by apply/Stc5.
+  admit.
+Admitted.
+
+(*
 Lemma commute_r l (M1 : closure) (X : closure) (E : ephemeral) :
     wfc l X 
   -> IsExc X
@@ -2144,6 +2162,7 @@ rewrite /SigmaRed => wfX ecX rb ->; elim: {E} ecX M1 l wfX rb.
 
 
 + move=> n ρ t1 [|] //. admit.
+*)
 (*
 
 
@@ -2161,6 +2180,7 @@ t2 M1 l wfX h; rev/rwbb: h => // {h}; last first.
     IsExc ((λλ [ξ [^n :: ρ] t1]) ○ (ξ [ρ] t2))
 *)
 
+(*
 + move=> c exc ihc M1 l; rev/wfc_lam => wfX h; rev/rwbl: h.
   move=> c' /ihc [] // E' [eq scE']; exists (λλ [E']); rewrite scE {1}eq.
   by split=> //; rewrite scE !c2tE; apply/Noξ.
@@ -2176,38 +2196,24 @@ t2 M1 l wfX h; rev/rwbb: h => // {h}; last first.
   move=> n cs _ ih l; rewrite sc_appS scE !(c2tE, c2t_appS).
   by ctor=> t; rewrite -map_comp => /mapP[] c /ih /(_ l) nf' -> /=.
 Admitted.
+*)
+
+Lemma BetaSigma l X S (m m' : term) : IsExc l X ->
+  sc X l = m :> term -> X →_[β,l] S -> m → m' -> sc S l = m' :> term.
+Proof. elim.
++ move=> n ρ t1 [|] // ρt ρts cs _ <-.
+  rewrite sc_appS c2t_appS scE !c2tE {}/cs !map_cons AppS_cons.
+  set cs := map _ _; set u1 := sc _ _; set u2 := sc _ _.
+  move=> h. admit.
+admit.
+Admitted.
 
 (* -------------------------------------------------------------------- *)
-Lemma IsExcBeta X l : IsExc X -> wfc l X -> exists2 S, IsStc S & X →_[β,l] S.
-Proof. Admitted.
-
-Goal False.
-Proof.
-have := @Exc1 1 [::] (#0) [:: ([::], #0)] (erefl true).
-set X := (X in IsExc X) => h1; have h2: wfc 10 X by do! constructor.
-have := IsExcBeta h1 h2; case=> C _; rewrite /X /=.
-inversion 1 => //; first by inversion H.
-by case: H2; constructor.
-Qed.
-
- case.
-+ move=> n ρ t1 [//|] ρt ρts cs _; rewrite {}/cs.
-  move/wfc_appsl; elim/wfc_lam; elim/wfc_clos.
-  move/mem_wf => /(_ ^n); case; rewrite ?mem_head //;
-    last by case=> [?][?][?] [//].
-  case=> l' ->; rewrite ltnS => le_l'l.
-  rewrite map_cons /=; set cs := map _ _.
-  exists (ξ [ξ [ρ] ρt.2 :: ρ] t1); first by apply/(Stc3 _ _ [::]).
-  constructor.
-
-
-
-
 Theorem commute l (S0 : closure) (m0 : term) :
   IsStc S0 -> wfc l S0 -> σc S0 l = m0 :> term ->
   (IsNf m0 -> exists2 N, S0 →*_[ρ,l] N & N = m0 :> term)
   /\ (~IsNf m0 -> exists S1 (m1 : term) X,
-           IsExc X
+           IsExc l X
         /\ S0 →*_[ρ,l] X
         /\ X →_[β,l] S1
         /\ IsStc S1
@@ -2218,19 +2224,10 @@ move=> h1 h2 h3; split => h4.
 + by case: (@sc_rho_inv S0 l m0) => // e rd m0E; subst; exists e.
 have: exists m0', m0 → m0' by admit. (* h4 *)
 case=> m0' rd; case: (@L_5_13 l S0 m0 m0') => // X [h5 h6 h7].
-exists S0, m0', X; do! split => //.
-
-
-Qed.
-
-    wfc l X 
-  -> IsExc X
-  -> X →_[β, l] M1
-  -> X →_[σ, l]  E
-  -> exists E', M1 →_[σ, l] E' /\ E → E'.
-
-
-
+case: (IsExcBeta h5 h6) => S h8 h9; exists S, m0', X.
+do! split=> //. move: h3 h9 rd => /=; rewrite (sc_rho h7).
+by apply/BetaSigma.
+Admitted.
 
 (* -------------------------------------------------------------------- *)
 Lemma IsStcGrd n : ~ IsStc ⌊n⌋.
