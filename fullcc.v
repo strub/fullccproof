@@ -1707,6 +1707,175 @@ by move=> t /mapP[c' /ih h ->].
 Qed.
 
 (* -------------------------------------------------------------------- *)
+Derive Inversion IsWhnfCN_clos_r
+  with (forall ρ t, IsWhnfC (ξ [ρ] t))
+  Sort Prop.
+
+Lemma IsWhnfCN_clos ρ t : ~ IsWhnfC (ξ [ρ] t).
+Proof.
+elim/IsWhnfCN_clos_r => _ n; elim/last_ind => //.
+by move=> ρs ρ' _; rewrite CAppS_rcons.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsNfC_grd n : IsNfC ⌊n⌋.
+Proof. by apply/(@IsNfCVar _ [::]). Qed.
+
+(* -------------------------------------------------------------------- *)
+Derive Inversion IsWhnfC_lvl_r with
+  (forall l, IsWhnfC ^l) Sort Prop.
+
+Lemma IsWhnfCN_lvl l : ~ IsWhnfC ^l.
+Proof.
+inversion 1 using IsWhnfC_lvl_r => _ n.
+by elim/last_ind => // cs c _; rewrite CAppS_rcons.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsNf_AppL t u : IsNf (t · u) -> IsNf t.
+Proof.
+suff: forall w, IsNf w -> w = t · u -> IsNf t.
++ by move=> h1 h2; apply/(h1 (t · u)).
+move=> w h; elim: h t u => //= x ts nf _ t u.
+elim/last_ind: ts nf => // ts t' _ nf.
+rewrite AppS_rcons => -[<- _]; constructor.
+by move=> z h; apply/nf; rewrite mem_rcons mem_behead.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsNf_AppR t u : IsNf (t · u) -> IsNf u.
+Proof.
+suff: forall w, IsNf w -> w = t · u -> IsNf u.
++ by move=> h1 h2; apply/(h1 (t · u)).
+move=> w h; elim: h t u => //= x ts nf _ t u.
+elim/last_ind: ts nf => // ts t' _ nf.
+rewrite AppS_rcons => -[_ <-]; apply/nf.
+by rewrite mem_rcons mem_head.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsNf_Lam t : IsNf (λ [t]) -> IsNf t.
+Proof.
+suff: forall w, IsNf w -> w = λ [t] -> IsNf t.
++ by move=> h1 h2; apply/(h1 (λ [t])).
+move=> w h; move: h t; elim.
++ by move=> t nf _ _ -[<-].
++ move=> /= x ts _ _ t; elim/last_ind: ts => //.
+  by move=> ts t' _; rewrite AppS_rcons.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Derive Inversion IsNfC_grd_apps_r with
+  (forall n cs, IsNfC (⌊n⌋ ○! cs)) Sort Prop.
+
+Lemma IsNfC_grd_apps n cs c :
+  IsNfC (⌊n⌋ ○! cs) -> c \in cs -> IsNfC c.
+Proof.
+move=> h; inversion h using IsNfC_grd_apps_r => {h} _.
++ move=> c' _; elim/last_ind: cs => // cs c'' _.
+  by rewrite CAppS_rcons => //.
++ by move=> p cs' h /eq_capps_grdI [_ <- /h].
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsStc_AppL c1 c2 : ~ IsNfC c1 -> IsStc (c1 ○ c2) -> IsStc c1.
+Proof. move=> h; inversion 1.
++ elim/last_ind: ρts H1 => // cs c _.
+  rewrite map_rcons CAppS_rcons => -[<- _].
+  by constructor.
++ elim/last_ind: ρts H1 => // cs c _.
+  rewrite map_rcons CAppS_rcons => -[<- _].
+  by constructor.
++ move: H0; rewrite {}/cs; elim/last_ind: ρts => /=.
+  - by case=> ? _; subst c1; case: h; constructor.
+  - move=> cs c' _; rewrite map_rcons CAppS_rcons.
+    by case=> <- _; apply/@Stc5.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsStc_AppR c1 c2 : IsStc (c1 ○ c2) -> IsStc c2.
+Proof. inversion 1.
++ elim/last_ind: ρts H1 => // c cs _.
+  rewrite map_rcons CAppS_rcons => -[_ <-].
+  by apply/(@Stc3 _ _ [::]).
++ elim/last_ind: ρts H1 => // c cs _.
+  rewrite map_rcons CAppS_rcons => -[_ <-].
+  by apply/(@Stc3 _ _ [::]).
++ subst cs; elim/last_ind: ρts H0 => /= [|c' cs _].
+  * by case=> _ <-.
+  rewrite map_rcons CAppS_rcons => -[_ <-].
+  by apply/(@Stc3 _ _ [::]).
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsNfC_AppR c1 c2 : IsNfC (c1 ○ c2) -> IsNfC c2.
+Proof.
+elim/IsNfC_appI => _ n; elim/last_ind=> // cs c _ ih.
+rewrite CAppS_rcons => -[_ <-]; apply/ih.
+by rewrite mem_rcons mem_head.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma IsNf_IsWhnf t : IsNf t -> IsWhnf t.
+Proof. by case=> {t} *; constructor. Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma sc_IsNfC c l : IsNfC c -> sc c l = c.
+Proof. move=> h; elim: h l => {c} [c _ cE|n cs _ ih] l.
++ by rewrite scE cE.
++ rewrite sc_appS scE; congr (_ ○! _).
+  by rewrite -[RHS]map_id; apply/eq_in_map => c ccs; apply/ih.
+Qed.
+
+(* -------------------------------------------------------------------- *)
+Lemma NIsNfC_red c l :
+ wfc l c -> IsStc c -> ~ IsNfC c -> exists c', c →_[ρ,l] c'.
+Proof. elim: c l => [t ρ|n|n|c ih c' ih'|c ih] l.
++ move=> _ _ _; case: t => [p|t1 t2|t].
+  * case: (ltnP p (size ρ)) => [lt|ge].
+    - by exists (nth ^0 ρ p); do! constructor.
+    - by exists ⌊p + l - size ρ⌋; constructor; apply/RhoRedFree/ge.
+  * by exists ((ξ [ρ] t1) ○ (ξ [ρ] t2)); do! constructor.
+  * by exists (λλ [ξ [^l.+1 :: ρ] t]); do! constructor.
++ by move=> _ _; case; apply/(@IsNfCVar _ [::]).
++ by move=> _ _ _; exists (⌊l-n⌋); do! constructor.
++ move=> h1 h2; move: h1; inversion h2 => h' h''.
+  * exists (⌊l - n⌋ ○! [seq ξ [ρt.1] ρt.2 | ρt <- ρts]) => {H0}.
+    move=> {h' h''}; elim/last_ind: ρts => /= [|ρts ρt ihr].
+    + by do! constructor.
+    + rewrite !map_rcons !CAppS_rcons; apply/NoCμ1 => //.
+      inversion 1.
+      + elim/last_ind: {H ihr} ρts H1 => // ρts ρt' _.
+        by rewrite map_rcons CAppS_rcons.
+      + elim/last_ind: {H ihr} ρts cs H1 => /= [|ρts ρt' ih''] cs H2.
+        * by elim/last_ind: cs H2 => // cs c'' _; rewrite CAppS_rcons.
+        * move: H2; rewrite map_rcons CAppS_rcons.
+          elim/last_ind: cs => // cs c'' _; rewrite CAppS_rcons.
+          by case=> /ih''.
+  * case: {H0 h''} t h' => [p|t1 t2|t] h'.
+    - elim/last_ind: {h'} ρts => /= [|ρts ρt ih''].
+      + case: (ltnP p (size ρ)) => [lt|gt].
+        - by exists (nth ^0 ρ p); do! constructor.
+        - by exists ⌊p + l - size ρ⌋; constructor; apply/RhoRedFree/gt.
+      + case: ih''=> c'' rd; exists (c'' ○ ξ [ρt.1] ρt.2).
+        rewrite map_rcons CAppS_rcons; apply/NoCμ1 => //.
+Admitted.
+
+Lemma red_NIsNfC c c' l :
+ wfc l c -> c →_[ρ,l] c' -> ~ IsNfC c.
+Proof. Admitted.
+
+(* -------------------------------------------------------------------- *)
+Lemma CAppS_injR n1 n2 cs1 cs2 : ⌊n1⌋ ○! cs1 = ⌊n2⌋ ○! cs2 -> cs1 = cs2.
+Proof.
+elim/last_ind: cs1 cs2 => /= [|cs1 c1 ih].
++ by elim/last_ind => // cs2 c2 _; rewrite CAppS_rcons.
++ elim/last_ind => //=; first by rewrite CAppS_rcons.
+  move=> cs2 c2 _; rewrite !CAppS_rcons.
+  by case=> /ih -> ->.
+Qed.
+
+(* -------------------------------------------------------------------- *)
 Lemma L_5_12 l (S : closure) (t : term) :
      IsStc S -> IsWhnfC S -> ~ IsNfC S -> IsNf t
   -> wfc l S -> σc S l = t :> term ->
@@ -1714,69 +1883,97 @@ Lemma L_5_12 l (S : closure) (t : term) :
         (~ IsNfC S' /\ IsWhnfC S')
      \/ (IsNfC S' /\ S' = t :> term)].
 Proof. elim: S l t.
-+ admit.                        (* not in WHNF *)
-+ admit.                        (* in NF *)
-+ admit.                        (* not in WHNF *)
++ by move=> t l l' t' _ /IsWhnfCN_clos.
++ by move=> n l t _ _ []; apply/IsNfC_grd.
++ by move=> n l t _ /IsWhnfCN_lvl.
 + move=> c1 ih1 c2 ih2 l t h1 h2 h3 h4 h5 /esym tE; case: (EM (IsNfC c1)) => nfc1.
   move: tE => /=; rewrite scE c2tE; case: t h4 => // t1 t2 h4 tE.
-  - have: exists n cs, c1 = ⌊n⌋ ○! cs by admit.
+  - have: exists n cs, c1 = ⌊n⌋ ○! cs.
+    * inversion h2; elim/last_ind: cs H0 => // cs c _.
+      by rewrite CAppS_rcons => -[<- _]; exists n, cs.
     case=> [n] [cs] c1E; subst c1; case: (EM (IsWhnfC c2)) => whnfc2.
-    * (* because: c1 is Whnf & c1 is Nf *)
-      have nfc2: ~ IsNfC c2 by admit. case: (ih2 l t2) => // {ih1 ih2}.
-      - admit. (* because of h1 *)
-      - admit. (* because of h4 *)
-      - admit. (* because of h5 *)
+    *  have nfc2: ~ IsNfC c2.
+      - move=> h6; apply/h3; rewrite -CAppS_rcons; constructor.
+        move=> c; rewrite mem_rcons in_cons => /orP[/eqP->//|c_cs].
+        inversion nfc1.
+        - by elim/last_ind: {+}cs H => // cs' c' _; rewrite CAppS_rcons.
+        by apply/H0; move/CAppS_injR: H => ->.
+      case: (ih2 l t2) => // {ih1 ih2}.
+      - by move/IsStc_AppR: h1.
+      - by move/IsNf_AppR: h4.
+      - by elim/wfc_app: h5. 
       - by case: tE => _ ->.
       move=> S'' [hS''1 hS''2 hS''3]; case: hS''3.
       - case=> hS''3 hS''4; exists (⌊n⌋ ○! cs ○ S''); split=> //.
         + by apply/NoCν => //=; apply/IsNeutralCP; do! eexists.
         + apply/(@Stc5 _ _ _ [::]) => // nf nfcs.
-          admit. (* Because of nfc1 *)
+          by move/IsNfC_grd_apps: nfc1; apply.
         left; split.
-        + admit. (* by nfc1 & hS''3 *)
+        + by move/IsNfC_AppR. 
         + by rewrite -CAppS_rcons; constructor.
       - case=> hS''3 ?; subst t2; exists (⌊n⌋ ○! cs ○ S''); split => //.
         + by apply/NoCν => //; apply/IsNeutralCP; do! eexists.
         + apply/(@Stc5 _ _ _ [::]) => // nf nfcs.
-          admit. (* Because of nfc1 *)
+          by move/IsNfC_grd_apps: nfc1; apply.
         right; split.
-        + admit. (* by nfc1 & hS''3 *)
+        + rewrite -CAppS_rcons; constructor => c.
+          rewrite mem_rcons in_cons => /orP[/eqP->//|].
+          inversion nfc1.
+          - elim/last_ind: {+}cs H => // cs' c' _.
+            by rewrite CAppS_rcons.
+          - by move/CAppS_injR: H => <-; apply/H0.
         + case: tE => -> _; rewrite c2tE; congr (_ · _).
-          admit. (* because of nfc1, sc vanishes *)
+          by rewrite sc_IsNfC.
   - (* from nfc1, h3, and the fact that the operator is neutral *)
     have: exists c2', c2 →_[ρ,l] c2' by admit.
     case=> c2' rd; case: (@L_5_11 l c2 c2' t2) => // {ih1 ih2}.
-    * admit. (* from h1 *)
-    * admit. (* from h4, t2 is NF, so WHNF *)
-    * admit. (* from h5 *)
+    * by move/IsStc_AppR: h1.
+    * by apply/IsNf_IsWhnf; move/IsNf_AppR: h4.
+    * by elim/wfc_app: h5.
     * by case: tE => _ ->.
     move=> h6 h7; exists (⌊n⌋ ○! cs ○ c2'); split=> //.
     * by apply/NoCν => //; apply/IsNeutralCP; do! eexists.
-    * apply/(@Stc5 _ _ _ [::]) => //. admit. (* by nfc1 *)
+    * apply/(@Stc5 _ _ _ [::]) => // nf h.
+      by move/IsNfC_grd_apps: nfc1; apply.
     case: (EM (IsNfC c2')) => h8.
     * right; split.
-      - admit. (* neutral + nf *)
-      - rewrite c2tE h7 //; case: tE => -> _.
-        admit. (* scvanishes because of nfc1 *)
+      - rewrite -CAppS_rcons; constructor => c.
+        rewrite mem_rcons in_cons => /orP[/eqP->//|c_in_cs].
+        by move/IsNfC_grd_apps: nfc1; apply.
+      - by rewrite c2tE h7 //; case: tE => -> _; rewrite sc_IsNfC.
     * left; split.
-      - admit. (* because of h8 *)
+      - by move/IsNfC_AppR/h8.
       - by rewrite -CAppS_rcons; constructor.
-
-  - have: exists c1', c1 →_[ρ,l] c1' by admit. (* because of nfc1 *)
+  - have: exists c1', c1 →_[ρ,l] c1'.
+    * admit. (* because of nfc1 *)
     case=> c1' rd; move: tE; rewrite /= scE c2tE; case: t h4 => //.
     move=> t1 t2 h4 [t1E t2E]; case: (ih1 l t1) => {ih1 ih2} //.
-    * admit. (* by h1 *)
-    * admit. (* by h2 *)
-    * admit. (* by h4 *)
-    * admit. (* by h5 *)
+    * by move/IsStc_AppL: h1; apply.
+    * inversion h2; elim/last_ind: cs H0 => // cs c _.
+      by rewrite CAppS_rcons => -[<- _]; constructor.
+    * by move/IsNf_AppL: h4.
+    * by elim/wfc_app: h5.
     move=> S'' [hS''1 hS''2 hS''3]; exists (S'' ○ c2); split.
     * apply/NoCμ2 => //.
-      - admit. (* by h2 *)
-      - admit. (* by h2 *)
+      - inversion h2; elim/last_ind: cs H0 => // cs c _.
+        by rewrite CAppS_rcons => -[<- _]; constructor.
+      - inversion h2; elim/last_ind: cs H0 => // cs c _.
+        rewrite CAppS_rcons => -[<- _]; apply/IsNeutralCP.
+        by exists n, cs.
     * have: exists ρ b, c2 = ξ [ρ] b.
-      - (* by inversion of h1, in Stc5,
-           c2 cannot be "c", otherwise c1 would by NF *)
-        admit.
+      - inversion h1.
+        - elim/last_ind: ρts H0 => // ρts ρt _.
+          rewrite map_rcons CAppS_rcons => -[_ <-].
+          by do! eexists.
+        - elim/last_ind: ρts H0 => // ρts ρt _.
+          rewrite map_rcons CAppS_rcons => -[_ <-].
+          by do! eexists.
+        - subst cs; elim/last_ind: ρts H => /=; last first.
+          * move=> ρts ρt _; rewrite map_rcons CAppS_rcons.
+            by case=> _ <-; do! eexists.
+          * case=> c1E _; have: IsNfC c1.
+            - by rewrite -c1E; constructor.
+            by case/(red_NIsNfC _ hS''1); elim/wfc_app: h5.
       case=> [ρ] [b] ?; subst c2.
       have h6: IsNeutralC S''.
       - (* by inversion of h2 *) admit.
@@ -1991,11 +2188,6 @@ move=> h1 h2; elim=> [X1 X2 h|X|X1 X2 X3 _ ih1 _ ih2].
 - by apply/rt_refl.
 - by apply/(rt_trans _ _ _ _ _ ih1 ih2).
 Qed.
-
-(* -------------------------------------------------------------------- *)
-Lemma NIsNfC_red c l :
- ~ IsNfC c -> exists c', c →_[ρ,l] c'.
-Proof. Admitted.
 
 (* -------------------------------------------------------------------- *)
 Lemma L_5_13 l (S : closure) (M M' : term) :
@@ -2284,39 +2476,6 @@ Lemma iswhnfCN_lvl l : ~ IsWhnfC (^l).
 Proof.
 elim/iswhnfI => // _ n; elim/last_ind => [|cs c _] //.
 by rewrite CAppS_rcons.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-Lemma IsNf_AppL t u : IsNf (t · u) -> IsNf t.
-Proof.
-suff: forall w, IsNf w -> w = t · u -> IsNf t.
-+ by move=> h1 h2; apply/(h1 (t · u)).
-move=> w h; elim: h t u => //= x ts nf _ t u.
-elim/last_ind: ts nf => // ts t' _ nf.
-rewrite AppS_rcons => -[<- _]; constructor.
-by move=> z h; apply/nf; rewrite mem_rcons mem_behead.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-Lemma IsNf_AppR t u : IsNf (t · u) -> IsNf u.
-Proof.
-suff: forall w, IsNf w -> w = t · u -> IsNf u.
-+ by move=> h1 h2; apply/(h1 (t · u)).
-move=> w h; elim: h t u => //= x ts nf _ t u.
-elim/last_ind: ts nf => // ts t' _ nf.
-rewrite AppS_rcons => -[_ <-]; apply/nf.
-by rewrite mem_rcons mem_head.
-Qed.
-
-(* -------------------------------------------------------------------- *)
-Lemma IsNf_Lam t  : IsNf (λ [t]) -> IsNf t.
-Proof.
-suff: forall w, IsNf w -> w = λ [t] -> IsNf t.
-+ by move=> h1 h2; apply/(h1 (λ [t])).
-move=> w h; move: h t; elim.
-+ by move=> t nf _ _ -[<-].
-+ move=> /= x ts _ _ t; elim/last_ind: ts => //.
-  by move=> ts t' _; rewrite AppS_rcons.
 Qed.
 
 (* -------------------------------------------------------------------- *)
